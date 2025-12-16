@@ -1,6 +1,6 @@
 import React from 'react';
 import { Wallpaper, AspectRatio, WallpaperType } from '../types';
-import { Download, Maximize2, X, Play } from 'lucide-react';
+import { X } from 'lucide-react';
 
 interface WallpaperDisplayProps {
   currentWallpaper: Wallpaper | null;
@@ -11,20 +11,11 @@ const WallpaperDisplay: React.FC<WallpaperDisplayProps> = ({ currentWallpaper, o
   if (!currentWallpaper) {
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center text-white/20 pointer-events-none select-none">
-        <h1 className="text-6xl font-black tracking-tighter mb-4 text-white/10">NEBULA</h1>
+        <h1 className="text-6xl font-black tracking-tighter mb-4 text-white/10">COSMIC'S</h1>
         <p className="text-xl font-light tracking-widest uppercase">Wallpaper Engine</p>
       </div>
     );
   }
-
-  const handleDownload = () => {
-    const link = document.createElement('a');
-    link.href = currentWallpaper.url;
-    link.download = `nebula-${currentWallpaper.id}.${currentWallpaper.type === WallpaperType.Video ? 'mp4' : 'png'}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
   // Calculate container aspect ratio styles to fit the image nicely
   const getAspectRatioClass = (ratio: AspectRatio) => {
@@ -58,29 +49,10 @@ const WallpaperDisplay: React.FC<WallpaperDisplayProps> = ({ currentWallpaper, o
           />
         )}
 
-        {/* Action Overlay */}
-        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl flex items-center justify-center gap-4 backdrop-blur-[2px]">
-          <button
-            onClick={handleDownload}
-            className="p-4 bg-white text-black rounded-full hover:scale-110 transition-transform shadow-xl flex items-center gap-2 font-bold"
-          >
-            <Download size={24} />
-            <span>Download</span>
-          </button>
-          
-          <button
-             onClick={() => window.open(currentWallpaper.url, '_blank')}
-             className="p-4 bg-white/10 text-white border border-white/20 rounded-full hover:bg-white/20 hover:scale-110 transition-all backdrop-blur-md"
-             title="Open Full Size"
-          >
-             {currentWallpaper.type === WallpaperType.Video ? <Play size={24} /> : <Maximize2 size={24} />}
-          </button>
-        </div>
-
         {/* Close Button (if viewing history item while creating new one) */}
         <button 
            onClick={onClose}
-           className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/80 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-md"
+           className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/80 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-md pointer-events-auto"
         >
           <X size={20} />
         </button>

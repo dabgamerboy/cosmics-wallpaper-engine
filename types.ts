@@ -31,6 +31,8 @@ export enum ImageSize {
   x4K = "4K",
 }
 
+export type RandomCategory = 'Any' | 'Anime' | 'Cyberpunk' | 'Earthy' | 'Sci-Fi' | 'Space' | 'Ocean' | 'Cars' | 'Fantasy' | 'Abstract' | 'Cityscape' | 'Surreal';
+
 export interface GenerationConfig {
   prompt: string;
   aspectRatio: AspectRatio;

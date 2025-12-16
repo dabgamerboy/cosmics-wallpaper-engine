@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { AspectRatio, ModelType, GenerationConfig, ImageSize, WallpaperType } from '../types';
-import { Wand2, LayoutTemplate, Zap, Lock, Settings2, ChevronDown, Film, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { AspectRatio, ModelType, GenerationConfig, ImageSize, WallpaperType, RandomCategory } from '../types';
+import { generateRandomPrompt } from '../services/geminiService';
+import { Wand2, LayoutTemplate, Zap, Lock, Settings2, ChevronDown, Film, Image as ImageIcon, Dice5, Check } from 'lucide-react';
 
 interface ControlsProps {
   isGenerating: boolean;
@@ -9,6 +10,8 @@ interface ControlsProps {
   hasProKey: boolean;
 }
 
+const CATEGORIES: RandomCategory[] = ['Any', 'Anime', 'Cyberpunk', 'Earthy', 'Sci-Fi', 'Space', 'Ocean', 'Cars', 'Fantasy', 'Abstract', 'Cityscape', 'Surreal'];
+
 const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequestProKey, hasProKey }) => {
   const [prompt, setPrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(AspectRatio.Landscape);
@@ -16,6 +19,23 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
   const [imageSize, setImageSize] = useState<ImageSize>(ImageSize.x1K);
   const [type, setType] = useState<WallpaperType>(WallpaperType.Image);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isRandomizing, setIsRandomizing] = useState(false);
+  
+  // Randomizer State
+  const [randomCategory, setRandomCategory] = useState<RandomCategory>('Any');
+  const [showCategoryMenu, setShowCategoryMenu] = useState(false);
+  const categoryMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close category menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (categoryMenuRef.current && !categoryMenuRef.current.contains(event.target as Node)) {
+        setShowCategoryMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Reset incompatible aspect ratios when switching to video
   useEffect(() => {
@@ -32,6 +52,25 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
     onGenerate({ prompt, aspectRatio, model, imageSize, type });
   };
 
+  const handleRandom = async () => {
+    if (isRandomizing || isGenerating) return;
+
+    setIsRandomizing(true);
+    try {
+      // Generate a random prompt using AI based on selected category
+      const randomPrompt = await generateRandomPrompt(randomCategory);
+      
+      // Update UI state with the new idea
+      setPrompt(randomPrompt);
+      // Reset some defaults for a fresh start
+      if (model === ModelType.Pro && !hasProKey) setModel(ModelType.Standard);
+    } catch (e) {
+      console.error("Error generating random prompt", e);
+    } finally {
+      setIsRandomizing(false);
+    }
+  };
+
   const handleModelChange = (newModel: ModelType) => {
     setModel(newModel);
     if (newModel === ModelType.Pro && !hasProKey) {
@@ -39,41 +78,96 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
     }
   };
 
-  const toggleType = () => {
-    const newType = type === WallpaperType.Image ? WallpaperType.Video : WallpaperType.Image;
-    setType(newType);
-    if (newType === WallpaperType.Video && !hasProKey) {
-      onRequestProKey();
-    }
-  };
-
   return (
     <div className="absolute bottom-0 left-0 right-0 p-6 z-10 flex justify-center items-end pointer-events-none">
+      <style>{`
+        @keyframes figure8 {
+          0% { transform: translate(0, 0); }
+          25% { transform: translate(3px, -3px); }
+          50% { transform: translate(0, 3px); }
+          75% { transform: translate(-3px, -3px); }
+          100% { transform: translate(0, 0); }
+        }
+        .animate-figure8 {
+          animation: figure8 1s linear infinite;
+        }
+      `}</style>
       <div className="w-full max-w-3xl bg-surface/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-4 pointer-events-auto transition-all duration-300">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           
           {/* Top Row: Input & Generate */}
-          <div className="flex gap-3">
+          <div className="flex gap-3 relative z-20">
+             {/* Random Button Group */}
+            <div className="relative flex items-stretch rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-white/10 transition-all hover:scale-105 active:scale-95 group" ref={categoryMenuRef}>
+                <button
+                  type="button"
+                  onClick={handleRandom}
+                  disabled={isGenerating || isRandomizing}
+                  className="pl-3 pr-2 flex items-center justify-center hover:bg-white/5 text-indigo-300 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed rounded-l-xl"
+                  title={`Roll Dice (${randomCategory})`}
+                >
+                   <Dice5 
+                     size={24} 
+                     className={`transition-all duration-1000 ease-out ${isRandomizing ? 'rotate-[720deg] text-white scale-110' : 'group-hover:rotate-45'}`} 
+                   />
+                </button>
+                <div className="w-px bg-white/10 my-2"></div>
+                <button
+                  type="button"
+                  onClick={() => setShowCategoryMenu(!showCategoryMenu)}
+                  className="px-2 hover:bg-white/5 text-indigo-300 hover:text-white transition-colors rounded-r-xl"
+                  title="Select Category"
+                >
+                   <ChevronDown size={14} className={`transition-transform duration-300 ${showCategoryMenu ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Categories Dropdown */}
+                {showCategoryMenu && (
+                  <div className="absolute bottom-full mb-2 left-0 w-48 bg-surface/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl p-1 grid grid-cols-1 gap-0.5 overflow-hidden animate-in slide-in-from-bottom-2 fade-in z-50">
+                     <div className="px-3 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-white/5 mb-1">
+                        Surprise Me
+                     </div>
+                     <div className="max-h-60 overflow-y-auto pr-1 space-y-0.5 custom-scrollbar">
+                        {CATEGORIES.map((cat) => (
+                           <button
+                              key={cat}
+                              type="button"
+                              onClick={() => { setRandomCategory(cat); setShowCategoryMenu(false); }}
+                              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
+                                 randomCategory === cat 
+                                    ? 'bg-primary/20 text-white' 
+                                    : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+                              }`}
+                           >
+                              <span>{cat}</span>
+                              {randomCategory === cat && <Check size={14} className="text-primary" />}
+                           </button>
+                        ))}
+                     </div>
+                  </div>
+                )}
+            </div>
+
             <input
               type="text"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder={type === WallpaperType.Video ? "Describe your video loop (e.g., 'Neon city rain loop, cyberpunk')..." : "Describe your dream wallpaper..."}
+              placeholder={type === WallpaperType.Video ? "Describe your video loop (e.g., 'Neon city rain loop, cyberpunk')..." : `Describe your ${randomCategory !== 'Any' ? randomCategory.toLowerCase() + ' ' : ''}dream wallpaper...`}
               className="flex-1 bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-transparent transition-all"
               disabled={isGenerating}
             />
             <button
               type="submit"
               disabled={isGenerating || !prompt.trim()}
-              className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-primary/20 whitespace-nowrap
+              className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-primary/20 whitespace-nowrap overflow-hidden
                 ${isGenerating 
-                  ? 'bg-gray-600 cursor-not-allowed text-gray-300' 
+                  ? 'bg-gradient-to-r from-primary/80 to-secondary/80 cursor-wait text-white ring-2 ring-white/20' 
                   : 'bg-gradient-to-r from-primary to-secondary hover:brightness-110 text-white'
                 }`}
             >
               {isGenerating ? (
                 <>
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <Wand2 size={20} className="animate-figure8 text-yellow-200" />
                   <span>{type === WallpaperType.Video ? 'Rendering...' : 'Dreaming...'}</span>
                 </>
               ) : (

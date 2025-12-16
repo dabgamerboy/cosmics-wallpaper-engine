@@ -99,6 +99,27 @@ export const generateWallpaperVideo = async (config: GenerationConfig): Promise<
   }
 };
 
+export const generateRandomPrompt = async (category: string = 'Any'): Promise<string> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  let userPrompt = "Generate a completely random, highly detailed, and creative image description for a desktop wallpaper.";
+  if (category !== 'Any') {
+    userPrompt = `Generate a highly detailed and creative image description for a desktop wallpaper specifically in the '${category}' style/theme.`;
+  }
+  userPrompt += " The concept must be vivid, evocative and suitable for a high-quality background. Return ONLY the prompt text, no introductory phrases.";
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: userPrompt,
+    });
+    return response.text?.trim() || `A surreal ${category} landscape`;
+  } catch (error) {
+    console.error("Failed to generate random prompt:", error);
+    return "A majestic cybernetic tiger roaming a neon-lit futuristic Tokyo alleyway"; // Fallback
+  }
+};
+
 export const checkApiKeySelection = async (): Promise<boolean> => {
   if (window.aistudio && window.aistudio.hasSelectedApiKey) {
     return await window.aistudio.hasSelectedApiKey();
