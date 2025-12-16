@@ -102,10 +102,28 @@ export const generateWallpaperVideo = async (config: GenerationConfig): Promise<
 export const generateRandomPrompt = async (category: string = 'Any'): Promise<string> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  let userPrompt = "Generate a completely random, highly detailed, and creative image description for a desktop wallpaper.";
-  if (category !== 'Any') {
-    userPrompt = `Generate a highly detailed and creative image description for a desktop wallpaper specifically in the '${category}' style/theme.`;
+  let userPrompt = "";
+
+  // Construct prompt based on category with style enforcement
+  if (category === 'Anime') {
+    userPrompt = "Generate a detailed, high-quality Anime/Manga style desktop wallpaper description. Make it cinematic and visually stunning (e.g., Makoto Shinkai or Studio Ghibli style).";
+  } else {
+    // Non-Anime categories
+    if (category === 'Any') {
+      userPrompt = "Generate a completely random, highly detailed, and creative image description for a desktop wallpaper. Pick a cool theme (Space, Nature, Cyberpunk, Abstract, Automotive, etc.).";
+    } else {
+      userPrompt = `Generate a highly detailed and creative image description for a desktop wallpaper specifically in the '${category}' style/theme.`;
+    }
+
+    // STRICT STYLE ENFORCEMENT
+    userPrompt += " IMPORTANT: The visual style MUST be Photorealistic, Cinematic, or Hyper-realistic 3D Render (Octane Render/Unreal Engine 5). STRICTLY AVOID: cartoons, vector art, simple illustrations, caricatures, and cel-shaded drawings.";
+    
+    // SPECIFIC CAR ENFORCEMENT
+    if (category === 'Cars' || category === 'Any') {
+      userPrompt += " If the subject is a car, it MUST look like a real vehicle in a cinematic setting (e.g., a high-end car commercial, Gran Turismo aesthetic, wet asphalt with neon reflections, or salt flats). The car proportions and lighting must be 100% realistic.";
+    }
   }
+
   userPrompt += " The concept must be vivid, evocative and suitable for a high-quality background. Return ONLY the prompt text, no introductory phrases.";
 
   try {
@@ -113,10 +131,10 @@ export const generateRandomPrompt = async (category: string = 'Any'): Promise<st
       model: 'gemini-2.5-flash',
       contents: userPrompt,
     });
-    return response.text?.trim() || `A surreal ${category} landscape`;
+    return response.text?.trim() || `A surreal ${category} landscape, photorealistic, 8k`;
   } catch (error) {
     console.error("Failed to generate random prompt:", error);
-    return "A majestic cybernetic tiger roaming a neon-lit futuristic Tokyo alleyway"; // Fallback
+    return "A sleek matte black sports car driving through a rainy cybercity at night, photorealistic, cinematic lighting, 8k resolution, wet road reflections"; // Fallback
   }
 };
 

@@ -26,6 +26,9 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const categoryMenuRef = useRef<HTMLDivElement>(null);
 
+  // ETA Timer State
+  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
+
   // Close category menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -45,6 +48,35 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
       }
     }
   }, [type]);
+
+  // Handle ETA Timer
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+
+    if (isGenerating) {
+      // Set initial duration if starting
+      setSecondsRemaining(prev => {
+        if (prev === null) {
+          // Estimate duration based on complexity
+          if (type === WallpaperType.Video) return 50; // Veo models take longer
+          if (model === ModelType.Pro) return 15; // Pro image model
+          return 5; // Flash image model is fast
+        }
+        return prev;
+      });
+
+      interval = setInterval(() => {
+        setSecondsRemaining(prev => {
+          if (prev === null || prev <= 0) return 0;
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      setSecondsRemaining(null);
+    }
+
+    return () => clearInterval(interval);
+  }, [isGenerating]); // Intentionally omitting type/model to avoid resets if they theoretically changed
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,7 +200,12 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
               {isGenerating ? (
                 <>
                   <Wand2 size={20} className="animate-figure8 text-yellow-200" />
-                  <span>{type === WallpaperType.Video ? 'Rendering...' : 'Dreaming...'}</span>
+                  <div className="flex flex-col items-start leading-none gap-0.5">
+                    <span>{type === WallpaperType.Video ? 'Rendering...' : 'Dreaming...'}</span>
+                    {secondsRemaining !== null && (
+                       <span className="text-[10px] font-normal opacity-90">~{secondsRemaining}s remaining</span>
+                    )}
+                  </div>
                 </>
               ) : (
                 <>
