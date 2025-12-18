@@ -1,3 +1,4 @@
+
 export interface Wallpaper {
   id: string;
   url: string;
@@ -6,6 +7,7 @@ export interface Wallpaper {
   aspectRatio: AspectRatio;
   model: ModelType | string; // Allow string for Veo models
   type: WallpaperType;
+  category: RandomCategory | 'Custom';
 }
 
 export enum WallpaperType {
@@ -17,7 +19,7 @@ export enum AspectRatio {
   Square = "1:1",
   Portrait = "9:16",
   Landscape = "16:9",
-  Wide = "4:3", // Using 4:3 as proxy for standard monitor if needed, but 16:9 is better for wallpaper
+  Wide = "4:3", 
 }
 
 export enum ModelType {
@@ -39,9 +41,10 @@ export interface GenerationConfig {
   model: ModelType;
   imageSize: ImageSize;
   type: WallpaperType;
+  category: RandomCategory | 'Custom';
+  image?: string;
 }
 
-// Global augmentation for the AI Studio window object
 declare global {
   interface AIStudio {
     hasSelectedApiKey: () => Promise<boolean>;
