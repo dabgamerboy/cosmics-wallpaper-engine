@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Wallpaper, AspectRatio, WallpaperType } from '../types';
 import { X } from 'lucide-react';
@@ -32,7 +33,8 @@ const WallpaperDisplay: React.FC<WallpaperDisplayProps> = ({ currentWallpaper, o
     <div className="absolute inset-0 flex items-center justify-center p-8 z-0">
       <div className={`relative group transition-all duration-500 ease-out ${getAspectRatioClass(currentWallpaper.aspectRatio)}`}>
         {/* Main Content */}
-        {currentWallpaper.type === WallpaperType.Video ? (
+        {/* Fix: Property 'Video' does not exist on type 'typeof WallpaperType'. Using 'video'. */}
+        {currentWallpaper.type === WallpaperType.video ? (
           <video
             src={currentWallpaper.url}
             autoPlay
@@ -62,7 +64,8 @@ const WallpaperDisplay: React.FC<WallpaperDisplayProps> = ({ currentWallpaper, o
       <div 
         className="absolute inset-0 -z-10 opacity-30 blur-[100px] scale-110 transition-all duration-1000"
       >
-        {currentWallpaper.type === WallpaperType.Video ? (
+        {/* Fix: Property 'Video' does not exist on type 'typeof WallpaperType'. Using 'video'. */}
+        {currentWallpaper.type === WallpaperType.video ? (
            <video src={currentWallpaper.url} autoPlay loop muted className="w-full h-full object-cover opacity-50" />
         ) : (
            <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(${currentWallpaper.url})` }} />

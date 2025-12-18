@@ -7,12 +7,12 @@ export interface Wallpaper {
   aspectRatio: AspectRatio;
   model: ModelType | string; // Allow string for Veo models
   type: WallpaperType;
-  category: RandomCategory | 'Custom';
+  categories: RandomCategory[];
 }
 
 export enum WallpaperType {
-  Image = 'image',
-  Video = 'video',
+  image = 'image',
+  video = 'video',
 }
 
 export enum AspectRatio {
@@ -33,7 +33,7 @@ export enum ImageSize {
   x4K = "4K",
 }
 
-export type RandomCategory = 'Any' | 'Anime' | 'Cyberpunk' | 'Earthy' | 'Sci-Fi' | 'Space' | 'Ocean' | 'Cars' | 'Fantasy' | 'Abstract' | 'Cityscape' | 'Surreal';
+export type RandomCategory = string;
 
 export interface GenerationConfig {
   prompt: string;
@@ -41,7 +41,7 @@ export interface GenerationConfig {
   model: ModelType;
   imageSize: ImageSize;
   type: WallpaperType;
-  category: RandomCategory | 'Custom';
+  categories: RandomCategory[];
   image?: string;
 }
 

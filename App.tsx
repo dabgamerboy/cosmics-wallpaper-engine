@@ -1,11 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
-import { History, Book, Info, Download, Maximize2, Play, Bookmark, Check } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { History, Book, Download, Maximize2, Play, Bookmark, BookmarkCheck, Settings, DownloadCloud, UploadCloud, Key, ChevronRight } from 'lucide-react';
 import SidebarList from './components/HistorySidebar';
 import Controls from './components/Controls';
 import WallpaperDisplay from './components/WallpaperDisplay';
 import { Wallpaper, GenerationConfig, ModelType, WallpaperType } from './types';
 import { generateWallpaperImage, generateWallpaperVideo, checkApiKeySelection, promptApiKeySelection } from './services/geminiService';
+import * as db from './services/dbService';
 
 type SidebarMode = 'history' | 'library' | null;
 
@@ -16,32 +17,49 @@ const App: React.FC = () => {
   const [activeSidebar, setActiveSidebar] = useState<SidebarMode>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [hasProKey, setHasProKey] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   
-  const [animatingTab, setAnimatingTab] = useState<string | null>(null);
-  const [downloadEffects, setDownloadEffects] = useState<{id: number, x: number, y: number}[]>([]);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const savedHistory = localStorage.getItem('nebula_history');
-    if (savedHistory) try { setHistory(JSON.parse(savedHistory)); } catch (e) {}
+    const loadData = async () => {
+      try {
+        const [savedHistory, savedLibrary] = await Promise.all([
+          db.getAllWallpapers('history'),
+          db.getAllWallpapers('library')
+        ]);
+        setHistory(savedHistory);
+        setLibrary(savedLibrary);
+      } catch (e) {
+        console.error("Failed to load data from IndexedDB:", e);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-    const savedLibrary = localStorage.getItem('nebula_library');
-    if (savedLibrary) try { setLibrary(JSON.parse(savedLibrary)); } catch (e) {}
-
+    loadData();
     checkApiKeySelection().then(setHasProKey);
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('nebula_history', JSON.stringify(history));
-  }, [history]);
-
-  useEffect(() => {
-    localStorage.setItem('nebula_library', JSON.stringify(library));
-  }, [library]);
+  const isInLibrary = useMemo(() => {
+    if (!currentWallpaper) return false;
+    return library.some(wp => wp.id === currentWallpaper.id);
+  }, [currentWallpaper, library]);
 
   const handleGenerate = async (config: GenerationConfig) => {
     setIsGenerating(true);
     
-    if (config.model === ModelType.Pro || config.type === WallpaperType.Video) {
+    if (config.model === ModelType.Pro || config.type === WallpaperType.video) {
       const hasKey = await checkApiKeySelection();
       if (!hasKey) {
         try {
@@ -56,7 +74,7 @@ const App: React.FC = () => {
 
     try {
       let mediaData: string;
-      if (config.type === WallpaperType.Video) {
+      if (config.type === WallpaperType.video) {
          mediaData = await generateWallpaperVideo(config);
       } else {
          mediaData = await generateWallpaperImage(config);
@@ -68,14 +86,13 @@ const App: React.FC = () => {
         prompt: config.prompt,
         timestamp: Date.now(),
         aspectRatio: config.aspectRatio,
-        model: config.type === WallpaperType.Video ? 'veo-3.1-fast-generate-preview' : config.model,
+        model: config.type === WallpaperType.video ? 'veo-3.1-fast-generate-preview' : config.model,
         type: config.type,
-        category: config.category,
+        categories: config.categories,
       };
 
+      await db.saveWallpaper('history', newWallpaper);
       setHistory((prev) => [newWallpaper, ...prev]);
-      // Also automatically save to library as requested
-      setLibrary((prev) => [newWallpaper, ...prev]);
       setCurrentWallpaper(newWallpaper);
     } catch (error) {
       console.error("Generation failed:", error);
@@ -85,27 +102,68 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDeleteHistory = (id: string) => {
-    setHistory((prev) => prev.filter(wp => wp.id !== id));
-    if (currentWallpaper?.id === id && activeSidebar === 'history') setCurrentWallpaper(null);
+  const handleSaveToLibrary = async (wp: Wallpaper) => {
+    if (library.some(item => item.id === wp.id)) {
+      await db.deleteWallpaper('library', wp.id);
+      setLibrary(prev => prev.filter(item => item.id !== wp.id));
+    } else {
+      await db.saveWallpaper('library', wp);
+      setLibrary(prev => [wp, ...prev]);
+    }
   };
 
-  const handleDeleteLibrary = (id: string) => {
-    setLibrary((prev) => prev.filter(wp => wp.id !== id));
-    if (currentWallpaper?.id === id && activeSidebar === 'library') setCurrentWallpaper(null);
+  const handleSaveBulkToLibrary = async (ids: string[]) => {
+    const toSave = history.filter(wp => ids.includes(wp.id) && !library.some(lib => lib.id === wp.id));
+    if (toSave.length === 0) return;
+    
+    await db.bulkSaveWallpapers('library', toSave);
+    setLibrary(prev => [...toSave, ...prev]);
+  };
+
+  const handleDeleteHistory = async (id: string) => {
+    try {
+      await db.deleteWallpaper('history', id);
+      setHistory((prev) => prev.filter(wp => wp.id !== id));
+      if (currentWallpaper?.id === id) setCurrentWallpaper(null);
+    } catch (e) {
+      console.error("Delete from history failed:", e);
+    }
+  };
+
+  const handleDeleteHistoryBulk = async (ids: string[]) => {
+    try {
+      await Promise.all(ids.map(id => db.deleteWallpaper('history', id)));
+      setHistory((prev) => prev.filter(wp => !ids.includes(wp.id)));
+      if (currentWallpaper && ids.includes(currentWallpaper.id)) setCurrentWallpaper(null);
+    } catch (e) {
+      console.error("Bulk delete history failed:", e);
+    }
+  };
+
+  const handleDeleteLibrary = async (id: string) => {
+    try {
+      await db.deleteWallpaper('library', id);
+      setLibrary((prev) => prev.filter(wp => wp.id !== id));
+      if (currentWallpaper?.id === id) setCurrentWallpaper(null);
+    } catch (e) {
+      console.error("Delete from library failed:", e);
+    }
+  };
+
+  const handleDeleteLibraryBulk = async (ids: string[]) => {
+    try {
+      await Promise.all(ids.map(id => db.deleteWallpaper('library', id)));
+      setLibrary((prev) => prev.filter(wp => !ids.includes(wp.id)));
+      if (currentWallpaper && ids.includes(currentWallpaper.id)) setCurrentWallpaper(null);
+    } catch (e) {
+      console.error("Bulk delete library failed:", e);
+    }
   };
 
   const handleDownload = (wp: Wallpaper, e?: React.MouseEvent) => {
-    if (e) {
-        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        const newEffect = { id: Date.now(), x: rect.left + rect.width / 2, y: rect.top };
-        setDownloadEffects(prev => [...prev, newEffect]);
-        setTimeout(() => setDownloadEffects(prev => prev.filter(ef => ef.id !== newEffect.id)), 1500);
-    }
-
     const link = document.createElement('a');
     link.href = wp.url;
-    link.download = `cosmic-${wp.id}.${wp.type === WallpaperType.Video ? 'mp4' : 'png'}`;
+    link.download = `cosmic-${wp.id}.${wp.type === WallpaperType.video ? 'mp4' : 'png'}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -126,23 +184,30 @@ const App: React.FC = () => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    setIsMenuOpen(false);
   };
 
-  const handleImportData = (file: File) => {
+  const handleImportData = async (file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = JSON.parse(e.target?.result as string);
         if (data.history && Array.isArray(data.history)) {
+          await db.clearStore('history');
+          await db.bulkSaveWallpapers('history', data.history);
           setHistory(data.history);
         }
         if (data.library && Array.isArray(data.library)) {
+          await db.clearStore('library');
+          await db.bulkSaveWallpapers('library', data.library);
           setLibrary(data.library);
         }
         alert("Backup imported successfully!");
       } catch (err) {
         console.error("Import failed", err);
         alert("Failed to import backup. Please make sure it's a valid cosmic backup file.");
+      } finally {
+        setIsMenuOpen(false);
       }
     };
     reader.readAsText(file);
@@ -152,45 +217,155 @@ const App: React.FC = () => {
     <div className="relative w-full h-screen bg-background overflow-hidden text-white font-sans selection:bg-secondary selection:text-white">
       {!currentWallpaper && <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/20 via-background to-purple-900/20 animate-gradient-x -z-10" />}
 
-      <WallpaperDisplay currentWallpaper={currentWallpaper} onClose={() => setCurrentWallpaper(null)} />
+      {isLoading ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-background z-50">
+           <div className="flex flex-col items-center gap-4">
+              <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+              <p className="text-sm font-medium text-primary animate-pulse">Initializing Cosmic Engine...</p>
+           </div>
+        </div>
+      ) : (
+        <>
+          <WallpaperDisplay currentWallpaper={currentWallpaper} onClose={() => setCurrentWallpaper(null)} />
 
-      <div className="absolute top-0 left-0 p-6 flex flex-col gap-3 z-30 pointer-events-none">
-        <button onClick={() => { setActiveSidebar(activeSidebar === 'history' ? null : 'history'); setAnimatingTab('history'); setTimeout(() => setAnimatingTab(null), 300); }}
-          className={`pointer-events-auto p-3 backdrop-blur-md rounded-xl text-white border transition-all hover:scale-105 active:scale-95 ${activeSidebar === 'history' ? 'bg-secondary text-white border-secondary shadow-lg shadow-secondary/20' : 'bg-surface/50 border-white/10'}`}>
-          <History size={24} />
-        </button>
-        <button onClick={() => { setActiveSidebar(activeSidebar === 'library' ? null : 'library'); setAnimatingTab('library'); setTimeout(() => setAnimatingTab(null), 300); }}
-          className={`pointer-events-auto p-3 backdrop-blur-md rounded-xl text-white border transition-all hover:scale-105 active:scale-95 ${activeSidebar === 'library' ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' : 'bg-surface/50 border-white/10'}`}>
-          <Book size={24} />
-        </button>
-      </div>
+          {/* Cog Menu - Hidden when sidebar is open */}
+          {!activeSidebar && (
+            <div className="absolute top-0 left-0 p-6 z-50" ref={menuRef}>
+              <button 
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className={`p-3 backdrop-blur-md rounded-xl text-white border transition-all hover:scale-105 active:scale-95 group overflow-hidden ${isMenuOpen ? 'bg-primary border-primary shadow-lg shadow-primary/20' : 'bg-surface/50 border-white/10 hover:bg-surface/80'}`}
+                aria-label="Toggle Menu"
+              >
+                <Settings 
+                  size={24} 
+                  className={`transition-transform duration-700 ease-in-out ${isMenuOpen ? 'rotate-[180deg]' : 'group-hover:rotate-45'}`} 
+                />
+              </button>
 
-      <div className="absolute top-0 right-0 p-6 flex justify-end z-30 pointer-events-none">
-        {currentWallpaper && (
-            <div className="flex gap-2 items-center">
-                <button onClick={(e) => handleDownload(currentWallpaper, e)} className="pointer-events-auto flex items-center gap-2 px-4 py-2 bg-primary/20 hover:bg-primary/40 backdrop-blur-md rounded-full text-xs text-white border border-primary/20 transition-all shadow-lg shadow-primary/10 hover:scale-105 active:scale-95">
-                    <Download size={14} />
-                    <span className="hidden sm:inline font-medium">Download</span>
-                </button>
-                 <button onClick={() => window.open(currentWallpaper.url, '_blank')} className="pointer-events-auto flex items-center gap-2 px-3 py-2 bg-surface/30 hover:bg-surface/60 backdrop-blur-md rounded-full text-xs text-white border border-white/5 transition-all">
-                    {currentWallpaper.type === WallpaperType.Video ? <Play size={14} /> : <Maximize2 size={14} />}
-                 </button>
+              {isMenuOpen && (
+                <div className="absolute top-full left-6 mt-3 w-64 bg-surface/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
+                  <div className="p-2 space-y-1">
+                    <div className="px-3 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Navigation</div>
+                    <button 
+                      onClick={() => { setActiveSidebar('history'); setIsMenuOpen(false); }}
+                      className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-white/5 rounded-xl transition-colors group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <History size={18} className="text-secondary" />
+                        <span className="text-sm font-medium">History</span>
+                      </div>
+                      <ChevronRight size={14} className="text-gray-600 group-hover:translate-x-1 transition-transform" />
+                    </button>
+                    <button 
+                      onClick={() => { setActiveSidebar('library'); setIsMenuOpen(false); }}
+                      className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-white/5 rounded-xl transition-colors group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Book size={18} className="text-primary" />
+                        <span className="text-sm font-medium">Library</span>
+                      </div>
+                      <ChevronRight size={14} className="text-gray-600 group-hover:translate-x-1 transition-transform" />
+                    </button>
+
+                    <div className="my-2 h-px bg-white/5 mx-3"></div>
+                    <div className="px-3 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">System</div>
+                    
+                    <button 
+                      onClick={handleExportData}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 rounded-xl transition-colors text-indigo-300 hover:text-indigo-200"
+                    >
+                      <DownloadCloud size={18} />
+                      <span className="text-sm font-medium">Back up Library</span>
+                    </button>
+                    
+                    <button 
+                      onClick={() => importInputRef.current?.click()}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 rounded-xl transition-colors text-purple-300 hover:text-purple-200"
+                    >
+                      <UploadCloud size={18} />
+                      <span className="text-sm font-medium">Import Library</span>
+                    </button>
+
+                    <button 
+                      onClick={() => { promptApiKeySelection().then(checkApiKeySelection).then(setHasProKey); setIsMenuOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 rounded-xl transition-colors ${hasProKey ? 'text-green-400' : 'text-yellow-400'}`}
+                    >
+                      <Key size={18} />
+                      <span className="text-sm font-medium">{hasProKey ? 'Pro Mode Active' : 'Enable Pro Mode'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-        )}
-      </div>
+          )}
 
-      <SidebarList title="History" icon={<History size={20} className="text-secondary" />} items={history} isOpen={activeSidebar === 'history'} onSelect={(wp) => { setCurrentWallpaper(wp); setActiveSidebar(null); }} onDelete={handleDeleteHistory} onDownload={handleDownload} categorized={false} />
-      <SidebarList title="Library" icon={<Book size={20} className="text-primary" />} items={library} isOpen={activeSidebar === 'library'} onSelect={(wp) => { setCurrentWallpaper(wp); setActiveSidebar(null); }} onDelete={handleDeleteLibrary} onDownload={handleDownload} categorized={true} />
-      
-      {activeSidebar && <div className="absolute inset-0 bg-black/50 z-20 backdrop-blur-sm" onClick={() => setActiveSidebar(null)} />}
-      <Controls 
-        isGenerating={isGenerating} 
-        onGenerate={handleGenerate} 
-        onExport={handleExportData}
-        onImport={handleImportData}
-        onRequestProKey={() => promptApiKeySelection().then(checkApiKeySelection).then(setHasProKey)} 
-        hasProKey={hasProKey} 
-      />
+          <input 
+            type="file" 
+            ref={importInputRef} 
+            onChange={(e) => e.target.files?.[0] && handleImportData(e.target.files[0])} 
+            className="hidden" 
+            accept="application/json" 
+          />
+
+          <div className="absolute top-0 right-0 p-6 flex justify-end z-30 pointer-events-none">
+            {currentWallpaper && (
+                <div className="flex gap-2 items-center">
+                    <button 
+                      onClick={() => handleSaveToLibrary(currentWallpaper)} 
+                      className={`pointer-events-auto flex items-center gap-2 px-4 py-2 backdrop-blur-md rounded-full text-xs transition-all shadow-lg hover:scale-105 active:scale-95 border ${isInLibrary ? 'bg-primary/40 border-primary text-white' : 'bg-surface/30 border-white/10 text-white/70 hover:text-white'}`}
+                      title={isInLibrary ? "Remove from Library" : "Save to Library"}
+                    >
+                        {isInLibrary ? <BookmarkCheck size={14} className="text-primary-foreground" /> : <Bookmark size={14} />}
+                        <span className="hidden sm:inline font-medium">{isInLibrary ? 'Saved' : 'Save'}</span>
+                    </button>
+                    <button onClick={(e) => handleDownload(currentWallpaper, e)} className="pointer-events-auto flex items-center gap-2 px-4 py-2 bg-surface/30 hover:bg-surface/60 backdrop-blur-md rounded-full text-xs text-white border border-white/10 transition-all shadow-lg hover:scale-105 active:scale-95">
+                        <Download size={14} />
+                        <span className="hidden sm:inline font-medium">Download</span>
+                    </button>
+                    <button onClick={() => window.open(currentWallpaper.url, '_blank')} className="pointer-events-auto flex items-center gap-2 px-3 py-2 bg-surface/30 hover:bg-surface/60 backdrop-blur-md rounded-full text-xs text-white border border-white/10 transition-all">
+                        {currentWallpaper.type === WallpaperType.video ? <Play size={14} /> : <Maximize2 size={14} />}
+                    </button>
+                </div>
+            )}
+          </div>
+
+          <SidebarList 
+            title="History" 
+            icon={<History size={20} className="text-secondary" />} 
+            items={history} 
+            libraryItems={library}
+            isOpen={activeSidebar === 'history'} 
+            onSelect={(wp) => { setCurrentWallpaper(wp); setActiveSidebar(null); }} 
+            onDelete={handleDeleteHistory} 
+            onDeleteBulk={handleDeleteHistoryBulk}
+            onDownload={handleDownload} 
+            onSaveToLibrary={handleSaveToLibrary}
+            onSaveBulkToLibrary={handleSaveBulkToLibrary}
+            categorized={false} 
+          />
+
+          <SidebarList 
+            title="Library" 
+            icon={<Book size={20} className="text-primary" />} 
+            items={library} 
+            isOpen={activeSidebar === 'library'} 
+            onSelect={(wp) => { setCurrentWallpaper(wp); setActiveSidebar(null); }} 
+            onDelete={handleDeleteLibrary} 
+            onDeleteBulk={handleDeleteLibraryBulk}
+            onDownload={handleDownload} 
+            categorized={true} 
+          />
+          
+          {(activeSidebar || isMenuOpen) && <div className="absolute inset-0 bg-black/50 z-20 backdrop-blur-sm" onClick={() => { setActiveSidebar(null); setIsMenuOpen(false); }} />}
+          
+          <Controls 
+            isGenerating={isGenerating} 
+            onGenerate={handleGenerate} 
+            onRequestProKey={() => promptApiKeySelection().then(checkApiKeySelection).then(setHasProKey)} 
+            hasProKey={hasProKey} 
+          />
+        </>
+      )}
     </div>
   );
 };
