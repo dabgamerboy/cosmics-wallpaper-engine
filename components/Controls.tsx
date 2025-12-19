@@ -13,7 +13,7 @@ interface ControlsProps {
 
 const INITIAL_CATEGORIES: RandomCategory[] = [
   'Any', 'Anime', 'Cyberpunk', 'Earthy', 'Sci-Fi', 'Space', 'Ocean', 'Cars', 'Fantasy', 
-  'Abstract', 'Cityscape', 'Surreal', 'Funny', 'Liminal', 'Horror', 'Animals', 'Food', 'Sports'
+  'Abstract', 'Cityscape', 'Surreal', 'Funny', 'Liminal', 'Horror', 'Animals', 'Food', 'Sports', 'Glitch', 'Matrix'
 ];
 
 const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequestProKey, hasProKey }) => {

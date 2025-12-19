@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { History, Book, Download, Maximize2, Play, Bookmark, BookmarkCheck, Settings, DownloadCloud, UploadCloud, Key, ChevronRight } from 'lucide-react';
+import { History, Book, Download, Maximize2, Play, Bookmark, BookmarkCheck, Settings, DownloadCloud, UploadCloud, Key, ChevronRight, Sparkles, Undo2, Redo2 } from 'lucide-react';
 import SidebarList from './components/HistorySidebar';
 import Controls from './components/Controls';
 import WallpaperDisplay from './components/WallpaperDisplay';
-import { Wallpaper, GenerationConfig, ModelType, WallpaperType } from './types';
-import { generateWallpaperImage, generateWallpaperVideo, checkApiKeySelection, promptApiKeySelection } from './services/geminiService';
+import EditingTools from './components/EditingTools';
+import { Wallpaper, GenerationConfig, ModelType, WallpaperType, AspectRatio, ImageSize } from './types';
+import { generateWallpaperImage, generateWallpaperVideo, checkApiKeySelection, promptApiKeySelection, editWallpaper } from './services/geminiService';
 import * as db from './services/dbService';
 
 type SidebarMode = 'history' | 'library' | null;
@@ -16,10 +17,16 @@ const App: React.FC = () => {
   const [currentWallpaper, setCurrentWallpaper] = useState<Wallpaper | null>(null);
   const [activeSidebar, setActiveSidebar] = useState<SidebarMode>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [showEditTools, setShowEditTools] = useState(false);
   const [hasProKey, setHasProKey] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
+  // Undo/Redo stacks for the current editing session
+  const [undoStack, setUndoStack] = useState<Wallpaper[]>([]);
+  const [redoStack, setRedoStack] = useState<Wallpaper[]>([]);
+
   const menuRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -94,12 +101,75 @@ const App: React.FC = () => {
       await db.saveWallpaper('history', newWallpaper);
       setHistory((prev) => [newWallpaper, ...prev]);
       setCurrentWallpaper(newWallpaper);
+      
+      // Clear session stacks on new generation
+      setUndoStack([]);
+      setRedoStack([]);
     } catch (error) {
       console.error("Generation failed:", error);
       alert("Failed to generate wallpaper. Please try again.");
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleApplyEdit = async (instruction: string, overrideModel?: ModelType, overrideSize?: ImageSize) => {
+    if (!currentWallpaper) return;
+    setIsEditing(true);
+
+    try {
+      const config: GenerationConfig = {
+        prompt: instruction,
+        aspectRatio: currentWallpaper.aspectRatio,
+        model: overrideModel || ModelType.Standard,
+        imageSize: overrideSize || ImageSize.x1K,
+        type: WallpaperType.image,
+        categories: ['Edit'],
+      };
+
+      const resultUrl = await editWallpaper(currentWallpaper.url, instruction, config);
+
+      const editedWallpaper: Wallpaper = {
+        id: Date.now().toString(),
+        url: resultUrl,
+        prompt: `[EDIT] ${instruction}`,
+        timestamp: Date.now(),
+        aspectRatio: currentWallpaper.aspectRatio,
+        model: config.model,
+        type: WallpaperType.image,
+        categories: ['Edit'],
+      };
+
+      // Handle Undo Stack: Push current before updating
+      setUndoStack(prev => [...prev, currentWallpaper]);
+      setRedoStack([]); // Clear redo on new action
+
+      await db.saveWallpaper('history', editedWallpaper);
+      setHistory((prev) => [editedWallpaper, ...prev]);
+      setCurrentWallpaper(editedWallpaper);
+      setShowEditTools(false);
+    } catch (error) {
+      console.error("Edit failed:", error);
+      alert("Failed to edit wallpaper. AI was unable to fulfill the request.");
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
+  const handleUndo = () => {
+    if (undoStack.length === 0 || !currentWallpaper) return;
+    const prev = undoStack[undoStack.length - 1];
+    setRedoStack(prevRedo => [...prevRedo, currentWallpaper]);
+    setUndoStack(prevUndo => prevUndo.slice(0, -1));
+    setCurrentWallpaper(prev);
+  };
+
+  const handleRedo = () => {
+    if (redoStack.length === 0 || !currentWallpaper) return;
+    const next = redoStack[redoStack.length - 1];
+    setUndoStack(prevUndo => [...prevUndo, currentWallpaper]);
+    setRedoStack(prevRedo => prevRedo.slice(0, -1));
+    setCurrentWallpaper(next);
   };
 
   const handleSaveToLibrary = async (wp: Wallpaper) => {
@@ -124,7 +194,11 @@ const App: React.FC = () => {
     try {
       await db.deleteWallpaper('history', id);
       setHistory((prev) => prev.filter(wp => wp.id !== id));
-      if (currentWallpaper?.id === id) setCurrentWallpaper(null);
+      if (currentWallpaper?.id === id) {
+        setCurrentWallpaper(null);
+        setUndoStack([]);
+        setRedoStack([]);
+      }
     } catch (e) {
       console.error("Delete from history failed:", e);
     }
@@ -134,7 +208,11 @@ const App: React.FC = () => {
     try {
       await Promise.all(ids.map(id => db.deleteWallpaper('history', id)));
       setHistory((prev) => prev.filter(wp => !ids.includes(wp.id)));
-      if (currentWallpaper && ids.includes(currentWallpaper.id)) setCurrentWallpaper(null);
+      if (currentWallpaper && ids.includes(currentWallpaper.id)) {
+        setCurrentWallpaper(null);
+        setUndoStack([]);
+        setRedoStack([]);
+      }
     } catch (e) {
       console.error("Bulk delete history failed:", e);
     }
@@ -226,7 +304,7 @@ const App: React.FC = () => {
         </div>
       ) : (
         <>
-          <WallpaperDisplay currentWallpaper={currentWallpaper} onClose={() => setCurrentWallpaper(null)} />
+          <WallpaperDisplay currentWallpaper={currentWallpaper} onClose={() => { setCurrentWallpaper(null); setUndoStack([]); setRedoStack([]); }} />
 
           {/* Cog Menu - Hidden when sidebar is open */}
           {!activeSidebar && (
@@ -310,6 +388,35 @@ const App: React.FC = () => {
           <div className="absolute top-0 right-0 p-6 flex justify-end z-30 pointer-events-none">
             {currentWallpaper && (
                 <div className="flex gap-2 items-center">
+                    {/* Undo/Redo Buttons */}
+                    <div className="flex gap-1 mr-2 pointer-events-auto">
+                        <button 
+                          onClick={handleUndo}
+                          disabled={undoStack.length === 0}
+                          className="p-2.5 backdrop-blur-md rounded-full bg-surface/30 border border-white/10 text-white/70 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:bg-surface/50"
+                          title="Undo last edit"
+                        >
+                            <Undo2 size={16} />
+                        </button>
+                        <button 
+                          onClick={handleRedo}
+                          disabled={redoStack.length === 0}
+                          className="p-2.5 backdrop-blur-md rounded-full bg-surface/30 border border-white/10 text-white/70 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:bg-surface/50"
+                          title="Redo edit"
+                        >
+                            <Redo2 size={16} />
+                        </button>
+                    </div>
+
+                    <button 
+                      onClick={() => setShowEditTools(!showEditTools)}
+                      className={`pointer-events-auto flex items-center gap-2 px-4 py-2 backdrop-blur-md rounded-full text-xs transition-all shadow-lg hover:scale-105 active:scale-95 border ${showEditTools ? 'bg-secondary border-secondary text-white' : 'bg-surface/30 border-white/10 text-white/70 hover:text-white'}`}
+                      title="AI Editing Tools"
+                      disabled={currentWallpaper.type === WallpaperType.video}
+                    >
+                        <Sparkles size={14} className={showEditTools ? 'animate-pulse' : ''} />
+                        <span className="hidden sm:inline font-medium">Edit AI</span>
+                    </button>
                     <button 
                       onClick={() => handleSaveToLibrary(currentWallpaper)} 
                       className={`pointer-events-auto flex items-center gap-2 px-4 py-2 backdrop-blur-md rounded-full text-xs transition-all shadow-lg hover:scale-105 active:scale-95 border ${isInLibrary ? 'bg-primary/40 border-primary text-white' : 'bg-surface/30 border-white/10 text-white/70 hover:text-white'}`}
@@ -335,7 +442,7 @@ const App: React.FC = () => {
             items={history} 
             libraryItems={library}
             isOpen={activeSidebar === 'history'} 
-            onSelect={(wp) => { setCurrentWallpaper(wp); setActiveSidebar(null); }} 
+            onSelect={(wp) => { setCurrentWallpaper(wp); setActiveSidebar(null); setUndoStack([]); setRedoStack([]); }} 
             onDelete={handleDeleteHistory} 
             onDeleteBulk={handleDeleteHistoryBulk}
             onDownload={handleDownload} 
@@ -349,7 +456,7 @@ const App: React.FC = () => {
             icon={<Book size={20} className="text-primary" />} 
             items={library} 
             isOpen={activeSidebar === 'library'} 
-            onSelect={(wp) => { setCurrentWallpaper(wp); setActiveSidebar(null); }} 
+            onSelect={(wp) => { setCurrentWallpaper(wp); setActiveSidebar(null); setUndoStack([]); setRedoStack([]); }} 
             onDelete={handleDeleteLibrary} 
             onDeleteBulk={handleDeleteLibraryBulk}
             onDownload={handleDownload} 
@@ -358,8 +465,18 @@ const App: React.FC = () => {
           
           {(activeSidebar || isMenuOpen) && <div className="absolute inset-0 bg-black/50 z-20 backdrop-blur-sm" onClick={() => { setActiveSidebar(null); setIsMenuOpen(false); }} />}
           
+          {showEditTools && currentWallpaper && (
+            <EditingTools 
+              onClose={() => setShowEditTools(false)}
+              onEdit={handleApplyEdit}
+              isProcessing={isEditing}
+              hasProKey={hasProKey}
+              currentAspectRatio={currentWallpaper.aspectRatio}
+            />
+          )}
+
           <Controls 
-            isGenerating={isGenerating} 
+            isGenerating={isGenerating || isEditing} 
             onGenerate={handleGenerate} 
             onRequestProKey={() => promptApiKeySelection().then(checkApiKeySelection).then(setHasProKey)} 
             hasProKey={hasProKey} 

@@ -1,6 +1,6 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { GenerationConfig, ModelType, WallpaperType, AspectRatio, RandomCategory } from "../types";
+import { GenerationConfig, ModelType, WallpaperType, AspectRatio, RandomCategory, ImageSize } from "../types";
 
 export const generateWallpaperImage = async (config: GenerationConfig): Promise<string> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -54,6 +54,58 @@ export const generateWallpaperImage = async (config: GenerationConfig): Promise<
     throw new Error("No image data found in the response.");
   } catch (error) {
     console.error("Gemini Generation Error:", error);
+    throw error;
+  }
+};
+
+export const editWallpaper = async (
+  baseImage: string, 
+  instruction: string, 
+  config: GenerationConfig
+): Promise<string> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  const base64Data = baseImage.split(',')[1];
+  const mimeType = baseImage.substring(baseImage.indexOf(':') + 1, baseImage.indexOf(';'));
+
+  const requestConfig: any = {
+    imageConfig: {
+      aspectRatio: config.aspectRatio,
+    },
+  };
+
+  if (config.model === ModelType.Pro) {
+    requestConfig.imageConfig.imageSize = config.imageSize;
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: config.model,
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: mimeType,
+              data: base64Data
+            }
+          },
+          { text: instruction }
+        ],
+      },
+      config: requestConfig,
+    });
+
+    if (response.candidates?.[0]?.content?.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData?.data) {
+          const outMimeType = part.inlineData.mimeType || "image/png";
+          return `data:${outMimeType};base64,${part.inlineData.data}`;
+        }
+      }
+    }
+    throw new Error("No image data returned from edit operation.");
+  } catch (error) {
+    console.error("Gemini Edit Error:", error);
     throw error;
   }
 };
