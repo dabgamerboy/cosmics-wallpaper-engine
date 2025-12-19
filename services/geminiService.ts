@@ -1,8 +1,13 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { GenerationConfig, ModelType, WallpaperType, AspectRatio, RandomCategory, ImageSize } from "../types";
+import { logger } from "./logService";
+
+const SOURCE = "GeminiService";
 
 export const generateWallpaperImage = async (config: GenerationConfig): Promise<string> => {
+  logger.info(SOURCE, `Starting image generation with model: ${config.model}`, { config });
+  
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const requestConfig: any = {
     imageConfig: {
@@ -44,6 +49,7 @@ export const generateWallpaperImage = async (config: GenerationConfig): Promise<
       if (content && content.parts) {
         for (const part of content.parts) {
           if (part.inlineData && part.inlineData.data) {
+            logger.info(SOURCE, "Image generation successful");
             const mimeType = part.inlineData.mimeType || "image/png";
             return `data:${mimeType};base64,${part.inlineData.data}`;
           }
@@ -51,9 +57,10 @@ export const generateWallpaperImage = async (config: GenerationConfig): Promise<
       }
     }
 
+    logger.error(SOURCE, "No image data found in candidates response", { response });
     throw new Error("No image data found in the response.");
-  } catch (error) {
-    console.error("Gemini Generation Error:", error);
+  } catch (error: any) {
+    logger.error(SOURCE, "Gemini Generation Error", { message: error.message, stack: error.stack });
     throw error;
   }
 };
@@ -63,8 +70,9 @@ export const editWallpaper = async (
   instruction: string, 
   config: GenerationConfig
 ): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  logger.info(SOURCE, `Starting AI edit: ${instruction}`, { instruction, config });
   
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const base64Data = baseImage.split(',')[1];
   const mimeType = baseImage.substring(baseImage.indexOf(':') + 1, baseImage.indexOf(';'));
 
@@ -98,19 +106,23 @@ export const editWallpaper = async (
     if (response.candidates?.[0]?.content?.parts) {
       for (const part of response.candidates[0].content.parts) {
         if (part.inlineData?.data) {
+          logger.info(SOURCE, "AI edit successful");
           const outMimeType = part.inlineData.mimeType || "image/png";
           return `data:${outMimeType};base64,${part.inlineData.data}`;
         }
       }
     }
+    logger.error(SOURCE, "No image data returned from edit operation", { response });
     throw new Error("No image data returned from edit operation.");
-  } catch (error) {
-    console.error("Gemini Edit Error:", error);
+  } catch (error: any) {
+    logger.error(SOURCE, "Gemini Edit Error", { message: error.message, stack: error.stack });
     throw error;
   }
 };
 
 export const generateWallpaperVideo = async (config: GenerationConfig): Promise<string> => {
+  logger.info(SOURCE, "Starting video generation (VEO)", { config });
+  
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   try {
@@ -146,18 +158,24 @@ export const generateWallpaperVideo = async (config: GenerationConfig): Promise<
       });
     }
 
+    logger.debug(SOURCE, "Video operation started", { operationId: operation.name });
+
     while (!operation.done) {
+      logger.debug(SOURCE, "Polling video status...");
       await new Promise(resolve => setTimeout(resolve, 10000));
       operation = await ai.operations.getVideosOperation({operation: operation});
     }
 
     const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
     if (!downloadLink) {
+      logger.error(SOURCE, "Video completed but no download link", { operation });
       throw new Error("Video generation completed but no download link was provided.");
     }
 
+    logger.debug(SOURCE, "Fetching video bytes from VEO storage");
     const response = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
     if (!response.ok) {
+      logger.error(SOURCE, `VEO fetch failed: ${response.status}`, { statusText: response.statusText });
       throw new Error(`Failed to download video: ${response.statusText}`);
     }
 
@@ -166,22 +184,27 @@ export const generateWallpaperVideo = async (config: GenerationConfig): Promise<
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => {
+        logger.info(SOURCE, "Video generation successful");
         const base64data = reader.result as string;
         resolve(base64data);
       };
-      reader.onerror = reject;
+      reader.onerror = (e) => {
+        logger.error(SOURCE, "FileReader error during video processing", e);
+        reject(e);
+      };
       reader.readAsDataURL(blob);
     });
 
-  } catch (error) {
-    console.error("Gemini Video Generation Error:", error);
+  } catch (error: any) {
+    logger.error(SOURCE, "Gemini Video Generation Error", { message: error.message, stack: error.stack });
     throw error;
   }
 };
 
 export const generateRandomPrompt = async (categories: RandomCategory[] = ['Any'], referenceImage?: string): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  logger.info(SOURCE, "Generating random prompt", { categories, hasReference: !!referenceImage });
   
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const parts: any[] = [];
   let userPrompt = "";
 
@@ -229,9 +252,11 @@ export const generateRandomPrompt = async (categories: RandomCategory[] = ['Any'
       model: 'gemini-3-flash-preview',
       contents: { parts: parts },
     });
-    return response.text?.trim() || `A fusion of ${categoryNames} wallpaper`;
-  } catch (error) {
-    console.error("Failed to generate random prompt:", error);
+    const result = response.text?.trim() || `A fusion of ${categoryNames} wallpaper`;
+    logger.debug(SOURCE, "Generated prompt result", { prompt: result });
+    return result;
+  } catch (error: any) {
+    logger.error(SOURCE, "Failed to generate random prompt", { error: error.message });
     return "A sleek matte black sports car driving through a rainy cybercity at night, photorealistic, cinematic lighting"; 
   }
 };

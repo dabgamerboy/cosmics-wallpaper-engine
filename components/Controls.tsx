@@ -2,21 +2,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AspectRatio, ModelType, GenerationConfig, ImageSize, WallpaperType, RandomCategory } from '../types';
 import { generateRandomPrompt } from '../services/geminiService';
-import { Wand2, LayoutTemplate, Zap, Lock, ChevronDown, Film, Image as ImageIcon, Dice5, Check, Upload, X, Plus } from 'lucide-react';
+import { Wand2, LayoutTemplate, Zap, Lock, ChevronDown, Film, Image as ImageIcon, Dice5, Check, Upload, X, Plus, Clock, ListRestart, Trash2 } from 'lucide-react';
 
 interface ControlsProps {
   isGenerating: boolean;
   onGenerate: (config: GenerationConfig) => void;
   onRequestProKey: () => void;
   hasProKey: boolean;
+  promptHistory: string[];
+  onClearPromptHistory: () => void;
 }
 
 const INITIAL_CATEGORIES: RandomCategory[] = [
   'Any', 'Anime', 'Cyberpunk', 'Earthy', 'Sci-Fi', 'Space', 'Ocean', 'Cars', 'Fantasy', 
-  'Abstract', 'Cityscape', 'Surreal', 'Funny', 'Liminal', 'Horror', 'Animals', 'Food', 'Sports', 'Glitch', 'Matrix'
+  'Abstract', 'Cityscape', 'Surreal', 'Funny', 'Liminal', 'Horror', 'Animals', 'Food', 'Sports', 'Glitch', 'Matrix', 'Soundwave'
 ];
 
-const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequestProKey, hasProKey }) => {
+const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequestProKey, hasProKey, promptHistory, onClearPromptHistory }) => {
   const [prompt, setPrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(AspectRatio.Landscape);
   const [model, setModel] = useState<ModelType>(ModelType.Standard);
@@ -30,19 +32,25 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
   const [allCategories, setAllCategories] = useState<RandomCategory[]>(INITIAL_CATEGORIES);
   const [selectedCategories, setSelectedCategories] = useState<RandomCategory[]>(['Any']);
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
+  const [showPromptHistory, setShowPromptHistory] = useState(false);
   const [isAddingCustom, setIsAddingCustom] = useState(false);
   const [customInput, setCustomInput] = useState('');
   
   const categoryMenuRef = useRef<HTMLDivElement>(null);
+  const promptHistoryRef = useRef<HTMLDivElement>(null);
   const customInputRef = useRef<HTMLInputElement>(null);
 
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
+  const [initialEta, setInitialEta] = useState<number>(0);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (categoryMenuRef.current && !categoryMenuRef.current.contains(event.target as Node)) {
         setShowCategoryMenu(false);
         setIsAddingCustom(false);
+      }
+      if (promptHistoryRef.current && !promptHistoryRef.current.contains(event.target as Node)) {
+        setShowPromptHistory(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -57,25 +65,39 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
     }
   }, [type]);
 
+  // Improved ETA logic
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (isGenerating) {
       setSecondsRemaining(prev => {
         if (prev === null) {
-          if (type === WallpaperType.video) return 55;
-          if (model === ModelType.Pro) return 18;
-          return 4;
+          // Calculate dynamic ETA
+          let eta = 0;
+          const complexityFactor = Math.min(Math.floor(prompt.length / 40), 5); // Max 5s bonus for complexity
+          
+          if (type === WallpaperType.video) {
+            eta = 65 + (complexityFactor * 2); // Videos take ~1min+
+          } else if (model === ModelType.Pro) {
+            eta = 22 + complexityFactor; // Pro is ~20s
+          } else {
+            eta = 5 + complexityFactor; // Flash is fast
+          }
+          
+          setInitialEta(eta);
+          return eta;
         }
         return prev;
       });
+      
       interval = setInterval(() => {
         setSecondsRemaining(prev => (prev === null || prev <= 0) ? 0 : prev - 1);
       }, 1000);
     } else {
       setSecondsRemaining(null);
+      setInitialEta(0);
     }
     return () => clearInterval(interval);
-  }, [isGenerating, type, model]); 
+  }, [isGenerating, type, model, prompt]); 
 
   const toggleCategory = (cat: RandomCategory) => {
     setSelectedCategories(prev => {
@@ -83,7 +105,7 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
       const withoutAny = prev.filter(c => c !== 'Any');
       if (prev.includes(cat)) {
         const next = withoutAny.filter(c => c !== cat);
-        return next;
+        return next.length === 0 ? ['Any'] : next;
       } else {
         return [...withoutAny, cat];
       }
@@ -124,13 +146,13 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
         categories: selectedCategories,
         image: selectedImage || undefined
     });
+    setShowPromptHistory(false);
   };
 
   const handleRandom = async () => {
     if (isRandomizing || isGenerating) return;
     setIsRandomizing(true);
     try {
-      // Use 'Any' if none selected for the generator
       const catsToUse = selectedCategories.length === 0 ? ['Any'] : selectedCategories;
       const randomPrompt = await generateRandomPrompt(catsToUse, selectedImage || undefined);
       setPrompt(randomPrompt);
@@ -185,6 +207,11 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
         ? `Mix (${selectedCategories.length})` 
         : selectedCategories.join(' + ');
 
+  // Calculate progress percentage for a subtle bar
+  const progress = initialEta > 0 && secondsRemaining !== null 
+    ? Math.max(0, Math.min(100, ((initialEta - secondsRemaining) / initialEta) * 100))
+    : 0;
+
   return (
     <div className="absolute bottom-0 left-0 right-0 p-6 z-10 flex justify-center items-end pointer-events-none">
       <style>{`
@@ -199,32 +226,37 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
           animation: figure8 1s linear infinite;
         }
       `}</style>
-      <div className="w-full max-w-3xl bg-surface/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-4 pointer-events-auto transition-all duration-300">
+      <div className="w-full max-w-3xl bg-surface/90 backdrop-blur-xl border border-border rounded-2xl shadow-2xl p-4 pointer-events-auto transition-all duration-300 relative">
+        {/* Subtle Progress Bar */}
+        {isGenerating && (
+          <div className="absolute top-0 left-0 h-1 bg-gradient-to-r from-primary to-secondary transition-all duration-1000 rounded-t-2xl z-10" style={{ width: `${progress}%` }} />
+        )}
+        
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex gap-3 relative z-20">
-            <div className="relative flex items-stretch rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-white/10 transition-all hover:scale-105 active:scale-95 group" ref={categoryMenuRef}>
+            <div className="relative flex items-stretch rounded-xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-border transition-all hover:scale-105 active:scale-95 group" ref={categoryMenuRef}>
                 <button
                   type="button"
                   onClick={handleRandom}
                   disabled={isGenerating || isRandomizing}
-                  className="pl-3 pr-2 flex items-center justify-center hover:bg-white/5 text-indigo-300 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed rounded-l-xl"
+                  className="pl-3 pr-2 flex items-center justify-center hover:bg-primary/10 text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed rounded-l-xl"
                   title={`Roll for ${currentCategoryLabel}`}
                 >
-                   <Dice5 size={24} className={`transition-all duration-1000 ease-out ${isRandomizing ? 'rotate-[720deg] text-white scale-110' : 'group-hover:rotate-45'}`} />
+                   <Dice5 size={24} className={`transition-all duration-1000 ease-out ${isRandomizing ? 'rotate-[720deg] text-primary scale-110' : 'group-hover:rotate-45'}`} />
                 </button>
-                <div className="w-px bg-white/10 my-2"></div>
+                <div className="w-px bg-border my-2"></div>
                 <button
                   type="button"
                   onClick={() => setShowCategoryMenu(!showCategoryMenu)}
-                  className="px-3 hover:bg-white/5 text-indigo-300 hover:text-white transition-colors rounded-r-xl flex items-center gap-2"
+                  className="px-3 hover:bg-primary/10 text-foreground transition-colors rounded-r-xl flex items-center gap-2"
                 >
                    <span className="text-[10px] font-bold tracking-tighter uppercase whitespace-nowrap min-w-[30px]">{currentCategoryLabel}</span>
                    <ChevronDown size={14} className={`transition-transform duration-300 ${showCategoryMenu ? 'rotate-180' : ''}`} />
                 </button>
                 {showCategoryMenu && (
-                  <div className="absolute bottom-full mb-2 left-0 w-64 bg-surface/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl p-1 z-50">
-                     <div className="px-3 py-2 flex items-center justify-between border-b border-white/5 mb-1">
-                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Mix & Match</span>
+                  <div className="absolute bottom-full mb-3 left-0 w-64 bg-surface/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1 z-[100] animate-in slide-in-from-bottom-4 duration-200">
+                     <div className="px-3 py-2 flex items-center justify-between border-b border-border mb-1">
+                        <span className="text-xs font-bold text-muted uppercase tracking-wider">Mix & Match</span>
                         <button 
                           type="button" 
                           onClick={() => setSelectedCategories(['Any'])}
@@ -237,19 +269,19 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
                               key={cat}
                               type="button"
                               onClick={() => toggleCategory(cat)}
-                              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${selectedCategories.includes(cat) ? 'bg-primary/20 text-white' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
+                              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${selectedCategories.includes(cat) ? 'bg-primary/20 text-foreground' : 'text-muted hover:bg-primary/10 hover:text-foreground'}`}
                            >
                               <span className="truncate pr-2">{cat}</span>
                               {selectedCategories.includes(cat) && <Check size={14} className="text-primary shrink-0" />}
                            </button>
                         ))}
                      </div>
-                     <div className="border-t border-white/5 p-1 pt-2">
+                     <div className="border-t border-border p-1 pt-2">
                         {!isAddingCustom ? (
                           <button 
                             type="button" 
                             onClick={() => { setIsAddingCustom(true); setTimeout(() => customInputRef.current?.focus(), 50); }}
-                            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-gray-400 hover:bg-white/5 hover:text-white transition-colors uppercase tracking-wider"
+                            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-muted hover:bg-primary/10 hover:text-foreground transition-colors uppercase tracking-wider"
                           >
                             <Plus size={14} />
                             Other
@@ -263,19 +295,19 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
                                onChange={(e) => setCustomInput(e.target.value)}
                                onKeyDown={(e) => e.key === 'Enter' && handleAddCustom()}
                                placeholder="Type category..."
-                               className="flex-1 bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary/50"
+                               className="flex-1 bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground placeholder-muted focus:outline-none focus:ring-1 focus:ring-primary/50"
                              />
                              <button 
                                type="button" 
                                onClick={() => handleAddCustom()}
-                               className="p-1.5 bg-primary/20 hover:bg-primary text-white rounded-lg transition-colors"
+                               className="p-1.5 bg-primary/20 hover:bg-primary hover:text-white text-primary rounded-lg transition-colors"
                              >
                                 <Plus size={14} />
                              </button>
                              <button 
                                type="button" 
                                onClick={() => setIsAddingCustom(false)}
-                               className="p-1.5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors"
+                               className="p-1.5 hover:bg-border text-muted rounded-lg transition-colors"
                              >
                                 <X size={14} />
                              </button>
@@ -291,18 +323,56 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
                 <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className={`h-full px-3 rounded-xl border transition-all flex items-center justify-center ${selectedImage ? 'bg-secondary/20 border-secondary text-secondary' : 'bg-black/20 border-white/10 text-gray-400 hover:text-white hover:bg-white/5'}`}
+                    className={`h-full px-3 rounded-xl border transition-all flex items-center justify-center ${selectedImage ? 'bg-secondary/20 border-secondary text-secondary' : 'bg-background border-border text-muted hover:text-foreground hover:bg-surface'}`}
                     disabled={isGenerating}
                 >
                     <Upload size={20} />
                 </button>
             </div>
 
-            <div className="flex-1 relative">
+            <div className="flex-1 relative flex items-center">
+                <div className="absolute left-3 z-10" ref={promptHistoryRef}>
+                   <button 
+                    type="button" 
+                    onClick={() => setShowPromptHistory(!showPromptHistory)}
+                    disabled={isGenerating || promptHistory.length === 0}
+                    className="p-1 text-muted hover:text-primary transition-colors disabled:opacity-0"
+                    title="Prompt History"
+                   >
+                     <ListRestart size={18} />
+                   </button>
+                   {showPromptHistory && (
+                     <div className="absolute bottom-full mb-3 left-0 w-80 bg-surface/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1 z-[100] animate-in slide-in-from-bottom-4 duration-200">
+                        <div className="px-3 py-2 flex items-center justify-between border-b border-border mb-1">
+                          <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Recent Prompts</span>
+                          <button 
+                            type="button" 
+                            onClick={onClearPromptHistory}
+                            className="p-1 text-red-400 hover:text-red-500 transition-colors"
+                            title="Clear History"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                        <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-0.5 p-1">
+                          {promptHistory.map((p, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => { setPrompt(p); setShowPromptHistory(false); }}
+                              className="w-full text-left px-3 py-2 rounded-lg text-xs text-muted hover:bg-primary/10 hover:text-foreground transition-colors line-clamp-2"
+                            >
+                              {p}
+                            </button>
+                          ))}
+                        </div>
+                     </div>
+                   )}
+                </div>
                 {selectedImage && (
-                    <div className="absolute bottom-full mb-3 left-0 p-1.5 bg-surface/90 backdrop-blur border border-white/10 rounded-xl shadow-2xl animate-in slide-in-from-bottom-2 z-50">
+                    <div className="absolute bottom-full mb-3 left-0 p-1.5 bg-surface/90 backdrop-blur border border-border rounded-xl shadow-2xl animate-in slide-in-from-bottom-2 z-50">
                         <div className="relative">
-                            <img src={selectedImage} alt="Preview" className="h-20 w-auto rounded-lg object-cover border border-white/10" />
+                            <img src={selectedImage} alt="Preview" className="h-20 w-auto rounded-lg object-cover border border-border" />
                             <button type="button" onClick={clearImage} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-lg hover:bg-red-600 border border-white/20 transition-transform hover:scale-110">
                                 <X size={12} />
                             </button>
@@ -314,7 +384,7 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder={getPlaceholder()}
-                  className="w-full h-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-transparent transition-all"
+                  className="w-full h-full bg-background border border-border rounded-xl pl-10 pr-4 py-3 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-transparent transition-all"
                   disabled={isGenerating}
                 />
             </div>
@@ -327,9 +397,14 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
               {isGenerating ? (
                 <>
                   <Wand2 size={20} className="animate-figure8 text-yellow-200" />
-                  <div className="flex flex-col items-start leading-none gap-0.5">
+                  <div className="flex flex-col items-start leading-none gap-0.5 min-w-[100px]">
                     <span>{type === WallpaperType.video ? 'Rendering...' : 'Dreaming...'}</span>
-                    {secondsRemaining !== null && <span className="text-[10px] font-normal opacity-90">{secondsRemaining > 0 ? `~${secondsRemaining}s remaining` : 'Finalizing...'}</span>}
+                    {secondsRemaining !== null && (
+                      <div className="flex items-center gap-1 text-[10px] font-normal opacity-90 text-white">
+                        <Clock size={10} />
+                        <span>{secondsRemaining > 0 ? `ETA: ${secondsRemaining}s` : 'Finalizing...'}</span>
+                      </div>
+                    )}
                   </div>
                 </>
               ) : (
@@ -343,29 +418,29 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
 
           <div className="flex items-center justify-between text-sm flex-wrap gap-2">
             <div className="flex items-center gap-4">
-               <div className="flex bg-black/30 rounded-lg p-1 border border-white/5">
-                  <button type="button" onClick={() => setType(WallpaperType.image)} className={`px-3 py-1 rounded-md flex items-center gap-2 transition-all ${type === WallpaperType.image ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
+               <div className="flex bg-background rounded-lg p-1 border border-border">
+                  <button type="button" onClick={() => setType(WallpaperType.image)} className={`px-3 py-1 rounded-md flex items-center gap-2 transition-all ${type === WallpaperType.image ? 'bg-surface text-foreground shadow-sm' : 'text-muted hover:text-foreground'}`}>
                     <ImageIcon size={14} />
                     <span>Still</span>
                   </button>
-                  <button type="button" onClick={() => { setType(WallpaperType.video); if (!hasProKey) onRequestProKey(); }} className={`px-3 py-1 rounded-md flex items-center gap-2 transition-all ${type === WallpaperType.video ? 'bg-gradient-to-r from-pink-900 to-rose-900 text-pink-100 shadow-sm border border-pink-500/30' : 'text-gray-400 hover:text-gray-200'}`}>
+                  <button type="button" onClick={() => { setType(WallpaperType.video); if (!hasProKey) onRequestProKey(); }} className={`px-3 py-1 rounded-md flex items-center gap-2 transition-all ${type === WallpaperType.video ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-sm border border-pink-500/30' : 'text-muted hover:text-foreground'}`}>
                      {type !== WallpaperType.video && !hasProKey && <Lock size={12} className="text-pink-500/80" />}
                     <Film size={14} />
                     <span>Animate</span>
                   </button>
                </div>
 
-               <div className="relative group">
-                 <button type="button" className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors">
+               <div className="relative group pointer-events-auto">
+                 <button type="button" className="flex items-center gap-2 text-muted hover:text-foreground transition-colors">
                     <LayoutTemplate size={16} />
                     <span>{aspectRatio}</span>
                     <ChevronDown size={14} className="opacity-50" />
                  </button>
-                 <div className="absolute bottom-full mb-2 left-0 bg-surface border border-white/10 rounded-lg shadow-xl overflow-hidden hidden group-hover:block w-32">
+                 <div className="absolute bottom-full mb-2 left-0 bg-surface border border-border rounded-lg shadow-xl overflow-hidden hidden group-hover:block w-32 z-[100] transition-colors">
                     {Object.values(AspectRatio).map((ratio) => {
                       const disabled = type === WallpaperType.video && ratio !== AspectRatio.Landscape && ratio !== AspectRatio.Portrait;
                       return (
-                        <button key={ratio} type="button" disabled={disabled} onClick={() => setAspectRatio(ratio)} className={`w-full text-left px-4 py-2 ${disabled ? 'opacity-30 cursor-not-allowed bg-black/20' : 'hover:bg-white/5'} ${aspectRatio === ratio ? 'text-secondary' : 'text-gray-300'}`}>
+                        <button key={ratio} type="button" disabled={disabled} onClick={() => setAspectRatio(ratio)} className={`w-full text-left px-4 py-2 ${disabled ? 'opacity-30 cursor-not-allowed bg-background' : 'hover:bg-primary/10'} ${aspectRatio === ratio ? 'text-secondary font-bold' : 'text-foreground'}`}>
                           {ratio}
                         </button>
                       );
@@ -374,12 +449,12 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
                </div>
 
                {type === WallpaperType.image && (
-                 <div className="flex bg-black/30 rounded-lg p-1 border border-white/5">
-                   <button type="button" onClick={() => handleModelChange(ModelType.Standard)} className={`px-3 py-1 rounded-md flex items-center gap-2 transition-all ${model === ModelType.Standard ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
+                 <div className="flex bg-background rounded-lg p-1 border border-border">
+                   <button type="button" onClick={() => handleModelChange(ModelType.Standard)} className={`px-3 py-1 rounded-md flex items-center gap-2 transition-all ${model === ModelType.Standard ? 'bg-surface text-foreground shadow-sm' : 'text-muted hover:text-foreground'}`}>
                      <Zap size={14} />
                      <span>Flash</span>
                    </button>
-                   <button type="button" onClick={() => handleModelChange(ModelType.Pro)} className={`px-3 py-1 rounded-md flex items-center gap-2 transition-all ${model === ModelType.Pro ? 'bg-gradient-to-r from-purple-900 to-indigo-900 text-purple-100 shadow-sm border border-purple-500/30' : 'text-gray-400 hover:text-gray-200'}`}>
+                   <button type="button" onClick={() => handleModelChange(ModelType.Pro)} className={`px-3 py-1 rounded-md flex items-center gap-2 transition-all ${model === ModelType.Pro ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm border border-purple-500/30' : 'text-muted hover:text-foreground'}`}>
                      {model !== ModelType.Pro && !hasProKey && <Lock size={12} className="text-yellow-500/80" />}
                      <span>Pro</span>
                    </button>
@@ -390,14 +465,14 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
             {/* High Res Options for Pro Model */}
             {model === ModelType.Pro && type === WallpaperType.image && (
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-gray-500 uppercase">Res</span>
-                <div className="flex bg-black/30 rounded-lg p-0.5 border border-white/5">
+                <span className="text-[10px] text-muted uppercase">Res</span>
+                <div className="flex bg-background rounded-lg p-0.5 border border-border">
                    {["1K", "2K", "4K"].map((size: any) => (
                       <button 
                         key={size}
                         type="button" 
                         onClick={() => setImageSize(size)}
-                        className={`px-2 py-0.5 rounded text-[10px] transition-all ${imageSize === size ? 'bg-secondary/40 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                        className={`px-2 py-0.5 rounded text-[10px] transition-all ${imageSize === size ? 'bg-secondary text-white' : 'text-muted hover:text-foreground'}`}
                       >{size}</button>
                    ))}
                 </div>

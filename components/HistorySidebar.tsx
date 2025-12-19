@@ -62,9 +62,9 @@ const SidebarItem: React.FC<SidebarItemProps> = ({
 
   return (
     <div 
-      className={`group relative bg-black/40 rounded-lg overflow-hidden border transition-all cursor-pointer 
+      className={`group relative bg-surface/50 rounded-lg overflow-hidden border transition-all cursor-pointer 
         ${isDeleting ? 'animate-dust-blow pointer-events-none' : 'hover:scale-[1.02]'} 
-        ${isSelected ? 'border-primary ring-2 ring-primary/30' : 'border-white/5 hover:border-white/20'}`}
+        ${isSelected ? 'border-primary ring-2 ring-primary/30' : 'border-border hover:border-muted'}`}
       onClick={handleClick}
     >
       <div className={`w-full ${wp.aspectRatio === AspectRatio.Portrait ? 'h-40' : 'h-24'} overflow-hidden relative`}>
@@ -101,13 +101,13 @@ const SidebarItem: React.FC<SidebarItemProps> = ({
       </div>
 
       <div className="p-2">
-        <p className="text-[10px] text-gray-200 line-clamp-1 font-medium">{wp.prompt}</p>
+        <p className="text-[10px] text-foreground line-clamp-1 font-medium">{wp.prompt}</p>
       </div>
 
       {/* Item Actions (Hidden in Selection Mode) */}
       {!isSelectionMode && (
         <div className="absolute top-2 left-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={handleDownloadClick} className="p-1.5 bg-surface/80 hover:bg-white text-black rounded-full backdrop-blur-sm transition-transform hover:scale-110 active:scale-95" title="Download">
+          <button onClick={handleDownloadClick} className="p-1.5 bg-surface/80 hover:bg-white text-foreground rounded-full backdrop-blur-sm transition-transform hover:scale-110 active:scale-95" title="Download">
             <Download size={12} />
           </button>
           {onSaveToLibrary && !isSaved && (
@@ -198,14 +198,14 @@ const SidebarList: React.FC<SidebarListProps> = ({
         }
         .animate-dust-blow { animation: dustBlow 0.7s ease-in forwards; z-index: 50; }
       `}</style>
-      <div className={`fixed left-0 top-0 bottom-0 w-80 bg-surface/95 backdrop-blur-md border-r border-white/10 flex flex-col transition-transform duration-300 z-40 shadow-2xl ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="p-4 border-b border-white/10 flex flex-col gap-3">
+      <div className={`fixed left-0 top-0 bottom-0 w-80 bg-surface/95 backdrop-blur-md border-r border-border flex flex-col transition-transform duration-300 z-40 shadow-2xl ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-4 border-b border-border flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">{icon}{title}</h2>
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">{icon}{title}</h2>
             <div className="flex items-center gap-2">
                 <button 
                   onClick={() => setIsSelectionMode(!isSelectionMode)}
-                  className={`p-1.5 rounded-lg transition-colors ${isSelectionMode ? 'bg-primary text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                  className={`p-1.5 rounded-lg transition-colors ${isSelectionMode ? 'bg-primary text-white' : 'text-muted hover:text-foreground hover:bg-primary/10'}`}
                   title="Multi-select"
                 >
                   <CheckSquare size={18} />
@@ -215,7 +215,7 @@ const SidebarList: React.FC<SidebarListProps> = ({
           
           {isSelectionMode && (
              <div className="flex items-center gap-2 animate-in slide-in-from-top-1 duration-200">
-                <button onClick={handleSelectAll} className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 bg-white/5 hover:bg-white/10 rounded border border-white/10 transition-colors">
+                <button onClick={handleSelectAll} className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 bg-surface border border-border hover:border-primary rounded transition-colors">
                   {selectedIds.size === items.length ? 'Deselect All' : 'Select All'}
                 </button>
                 <div className="flex-1"></div>
@@ -237,7 +237,7 @@ const SidebarList: React.FC<SidebarListProps> = ({
                 >
                   <Trash size={18} />
                 </button>
-                <button onClick={() => setIsSelectionMode(false)} className="p-1.5 text-gray-500 hover:text-white transition-colors">
+                <button onClick={() => setIsSelectionMode(false)} className="p-1.5 text-muted hover:text-foreground transition-colors">
                   <X size={18} />
                 </button>
              </div>
@@ -246,7 +246,7 @@ const SidebarList: React.FC<SidebarListProps> = ({
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
           {items.length === 0 ? (
-            <div className="text-center text-gray-500 mt-10">
+            <div className="text-center text-muted mt-10">
               <ImageIcon size={48} className="mx-auto mb-2 opacity-50" />
               <p>{emptyMessage}</p>
             </div>
@@ -258,9 +258,9 @@ const SidebarList: React.FC<SidebarListProps> = ({
                   {categorized && (
                     <button 
                       onClick={() => toggleCategory(cat)}
-                      className="w-full flex items-center justify-between py-2 border-b border-white/5 group hover:text-primary transition-colors"
+                      className="w-full flex items-center justify-between py-2 border-b border-border group hover:text-primary transition-colors"
                     >
-                      <span className="text-xs font-bold uppercase tracking-widest text-gray-400 group-hover:text-primary">{cat} ({categoryItems.length})</span>
+                      <span className="text-xs font-bold uppercase tracking-widest text-muted group-hover:text-primary">{cat} ({categoryItems.length})</span>
                       {expandedCategories[cat] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     </button>
                   )}

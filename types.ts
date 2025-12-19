@@ -45,6 +45,17 @@ export interface GenerationConfig {
   image?: string;
 }
 
+export type LogLevel = 'info' | 'warn' | 'error' | 'debug';
+
+export interface LogEntry {
+  id: string;
+  timestamp: number;
+  level: LogLevel;
+  source: string;
+  message: string;
+  data?: any;
+}
+
 declare global {
   interface AIStudio {
     hasSelectedApiKey: () => Promise<boolean>;
