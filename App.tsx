@@ -1,18 +1,37 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { History, Book, Download, Maximize2, Play, Bookmark, BookmarkCheck, Settings, DownloadCloud, UploadCloud, Key, ChevronRight, Sparkles, Undo2, Redo2, Bug, Sun, Moon } from 'lucide-react';
+import { History, Book, Download, Maximize2, Play, Bookmark, BookmarkCheck, Settings, DownloadCloud, UploadCloud, Key, ChevronRight, Sparkles, Undo2, Redo2, Bug, Sun, Moon, Palette, Check, Pipette, ZapOff } from 'lucide-react';
 import SidebarList from './components/HistorySidebar';
 import Controls from './components/Controls';
 import WallpaperDisplay from './components/WallpaperDisplay';
 import EditingTools from './components/EditingTools';
 import DebugOverlay from './components/DebugOverlay';
-import { Wallpaper, GenerationConfig, ModelType, WallpaperType, AspectRatio, ImageSize } from './types';
+import { Wallpaper, GenerationConfig, ModelType, WallpaperType, AspectRatio, ImageSize, Theme, CustomThemeColors } from './types';
 import { generateWallpaperImage, generateWallpaperVideo, checkApiKeySelection, promptApiKeySelection, editWallpaper } from './services/geminiService';
 import * as db from './services/dbService';
 import { logger } from './services/logService';
 
 type SidebarMode = 'history' | 'library' | null;
-type Theme = 'light' | 'dark';
+
+const THEMES: { id: Theme; label: string; color: string }[] = [
+  { id: 'light', label: 'Light', color: '#f8fafc' },
+  { id: 'dark', label: 'Dark', color: '#1e293b' },
+  { id: 'cosmic', label: 'Cosmic', color: '#220135' },
+  { id: 'sunset', label: 'Sunset', color: '#2d1616' },
+  { id: 'forest', label: 'Forest', color: '#0c2212' },
+  { id: 'cyber', label: 'Cyber', color: '#000000' },
+  { id: 'custom', label: 'Custom', color: 'linear-gradient(45deg, #ff0000, #00ff00, #0000ff)' },
+];
+
+const DEFAULT_CUSTOM_COLORS: CustomThemeColors = {
+  background: '#0f172a',
+  surface: '#1e293b',
+  foreground: '#f8fafc',
+  muted: '#94a3b8',
+  border: 'rgba(255, 255, 255, 0.1)',
+  primary: '#818cf8',
+  secondary: '#c084fc',
+};
 
 const App: React.FC = () => {
   const [history, setHistory] = useState<Wallpaper[]>([]);
@@ -31,6 +50,14 @@ const App: React.FC = () => {
     const saved = localStorage.getItem('cosmic-theme') as Theme;
     return saved || 'dark';
   });
+  const [animationsEnabled, setAnimationsEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('cosmic-animations');
+    return saved === null ? true : saved === 'true';
+  });
+  const [customColors, setCustomColors] = useState<CustomThemeColors>(() => {
+    const saved = localStorage.getItem('cosmic-custom-colors');
+    return saved ? JSON.parse(saved) : DEFAULT_CUSTOM_COLORS;
+  });
   
   // Undo/Redo stacks for the current editing session
   const [undoStack, setUndoStack] = useState<Wallpaper[]>([]);
@@ -39,13 +66,43 @@ const App: React.FC = () => {
   const menuRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
+  // Apply animations toggle
+  useEffect(() => {
+    const root = window.document.documentElement;
+    if (animationsEnabled) {
+      root.classList.remove('animations-disabled');
+    } else {
+      root.classList.add('animations-disabled');
+    }
+    localStorage.setItem('cosmic-animations', String(animationsEnabled));
+  }, [animationsEnabled]);
+
   // Apply theme to document
   useEffect(() => {
     const root = window.document.documentElement;
-    root.classList.remove('light', 'dark');
+    THEMES.forEach(t => root.classList.remove(t.id));
     root.classList.add(theme);
     localStorage.setItem('cosmic-theme', theme);
-  }, [theme]);
+
+    if (theme === 'custom') {
+      root.style.setProperty('--color-background', customColors.background);
+      root.style.setProperty('--color-surface', customColors.surface);
+      root.style.setProperty('--color-foreground', customColors.foreground);
+      root.style.setProperty('--color-muted', customColors.muted);
+      root.style.setProperty('--color-border', customColors.border);
+      root.style.setProperty('--color-primary', customColors.primary);
+      root.style.setProperty('--color-secondary', customColors.secondary);
+    } else {
+      // Clear custom styles when using predefined themes
+      root.style.removeProperty('--color-background');
+      root.style.removeProperty('--color-surface');
+      root.style.removeProperty('--color-foreground');
+      root.style.removeProperty('--color-muted');
+      root.style.removeProperty('--color-border');
+      root.style.removeProperty('--color-primary');
+      root.style.removeProperty('--color-secondary');
+    }
+  }, [theme, customColors]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -83,8 +140,10 @@ const App: React.FC = () => {
     return library.some(wp => wp.id === currentWallpaper.id);
   }, [currentWallpaper, library]);
 
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  const updateCustomColor = (key: keyof CustomThemeColors, value: string) => {
+    const updated = { ...customColors, [key]: value };
+    setCustomColors(updated);
+    localStorage.setItem('cosmic-custom-colors', JSON.stringify(updated));
   };
 
   const handleGenerate = async (config: GenerationConfig) => {
@@ -375,8 +434,8 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="relative w-full h-screen bg-background overflow-hidden text-foreground font-sans selection:bg-secondary selection:text-white transition-colors duration-300">
-      {!currentWallpaper && <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/20 via-background to-purple-900/20 animate-gradient-x -z-10" />}
+    <div className="relative w-full h-screen bg-background overflow-hidden text-foreground font-sans selection:bg-secondary selection:text-white transition-colors duration-500">
+      {!currentWallpaper && <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/10 via-background to-purple-900/10 animate-gradient-x -z-10" />}
 
       {isLoading ? (
         <div className="absolute inset-0 flex items-center justify-center bg-background z-50">
@@ -404,7 +463,7 @@ const App: React.FC = () => {
               </button>
 
               {isMenuOpen && (
-                <div className="absolute top-full left-6 mt-3 w-64 bg-surface/95 backdrop-blur-xl border border-border rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="absolute top-full left-6 mt-3 w-80 max-h-[85vh] overflow-y-auto custom-scrollbar bg-surface/95 backdrop-blur-xl border border-border rounded-2xl shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300">
                   <div className="p-2 space-y-1">
                     <div className="px-3 py-2 text-[10px] font-bold text-muted uppercase tracking-widest">Navigation</div>
                     <button 
@@ -429,18 +488,112 @@ const App: React.FC = () => {
                     </button>
 
                     <div className="my-2 h-px bg-border mx-3"></div>
-                    <div className="px-3 py-2 text-[10px] font-bold text-muted uppercase tracking-widest">Appearance</div>
+                    <div className="px-3 py-2 text-[10px] font-bold text-muted uppercase tracking-widest flex items-center gap-2">
+                       <Palette size={12} /> Color Mode
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-2 px-2 pb-2">
+                       {THEMES.map((t) => (
+                         <button
+                           key={t.id}
+                           onClick={() => setTheme(t.id)}
+                           className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all border ${theme === t.id ? 'bg-primary/20 border-primary' : 'bg-background/40 border-border hover:border-muted'}`}
+                         >
+                           <div 
+                             className="w-8 h-8 rounded-full border border-white/20 shadow-sm flex items-center justify-center overflow-hidden" 
+                             style={{ background: t.color }}
+                           >
+                              {theme === t.id && <Check size={14} className={t.id === 'light' ? 'text-black' : 'text-white'} />}
+                           </div>
+                           <span className="text-[10px] font-bold">{t.label}</span>
+                         </button>
+                       ))}
+                    </div>
+
+                    {theme === 'custom' && (
+                      <div className="px-3 py-3 mt-2 bg-background/30 rounded-2xl border border-border/50 space-y-3 animate-in fade-in slide-in-from-top-2">
+                         <div className="flex items-center gap-2 mb-1">
+                            <Pipette size={12} className="text-primary" />
+                            <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Custom Palette</span>
+                         </div>
+                         <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                               <label className="text-[10px] text-muted block ml-1">Background</label>
+                               <div className="flex items-center gap-2">
+                                  <input 
+                                    type="color" 
+                                    value={customColors.background} 
+                                    onChange={(e) => updateCustomColor('background', e.target.value)}
+                                    className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                                  />
+                                  <span className="text-[10px] font-mono uppercase opacity-60">{customColors.background}</span>
+                               </div>
+                            </div>
+                            <div className="space-y-1">
+                               <label className="text-[10px] text-muted block ml-1">Surface</label>
+                               <div className="flex items-center gap-2">
+                                  <input 
+                                    type="color" 
+                                    value={customColors.surface} 
+                                    onChange={(e) => updateCustomColor('surface', e.target.value)}
+                                    className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                                  />
+                                  <span className="text-[10px] font-mono uppercase opacity-60">{customColors.surface}</span>
+                               </div>
+                            </div>
+                            <div className="space-y-1">
+                               <label className="text-[10px] text-muted block ml-1">Primary</label>
+                               <div className="flex items-center gap-2">
+                                  <input 
+                                    type="color" 
+                                    value={customColors.primary} 
+                                    onChange={(e) => updateCustomColor('primary', e.target.value)}
+                                    className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                                  />
+                                  <span className="text-[10px] font-mono uppercase opacity-60">{customColors.primary}</span>
+                               </div>
+                            </div>
+                            <div className="space-y-1">
+                               <label className="text-[10px] text-muted block ml-1">Secondary</label>
+                               <div className="flex items-center gap-2">
+                                  <input 
+                                    type="color" 
+                                    value={customColors.secondary} 
+                                    onChange={(e) => updateCustomColor('secondary', e.target.value)}
+                                    className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                                  />
+                                  <span className="text-[10px] font-mono uppercase opacity-60">{customColors.secondary}</span>
+                               </div>
+                            </div>
+                            <div className="space-y-1">
+                               <label className="text-[10px] text-muted block ml-1">Text</label>
+                               <div className="flex items-center gap-2">
+                                  <input 
+                                    type="color" 
+                                    value={customColors.foreground} 
+                                    onChange={(e) => updateCustomColor('foreground', e.target.value)}
+                                    className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                                  />
+                                  <span className="text-[10px] font-mono uppercase opacity-60">{customColors.foreground}</span>
+                               </div>
+                            </div>
+                         </div>
+                      </div>
+                    )}
+
+                    <div className="my-2 h-px bg-border mx-3"></div>
+                    <div className="px-3 py-2 text-[10px] font-bold text-muted uppercase tracking-widest">Preferences</div>
                     
                     <button 
-                      onClick={toggleTheme}
+                      onClick={() => setAnimationsEnabled(!animationsEnabled)}
                       className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-primary/10 rounded-xl transition-colors group"
                     >
                       <div className="flex items-center gap-3">
-                        {theme === 'dark' ? <Moon size={18} className="text-indigo-400" /> : <Sun size={18} className="text-yellow-500" />}
-                        <span className="text-sm font-medium">{theme === 'dark' ? 'Dark Mode' : 'Light Mode'}</span>
+                        <ZapOff size={18} className={animationsEnabled ? 'text-muted' : 'text-primary'} />
+                        <span className="text-sm font-medium">Subtle Animations</span>
                       </div>
-                      <div className="w-8 h-4 bg-border rounded-full relative">
-                        <div className={`absolute top-0.5 w-3 h-3 bg-foreground rounded-full transition-all ${theme === 'dark' ? 'right-0.5' : 'left-0.5'}`} />
+                      <div className={`w-8 h-4 rounded-full relative transition-colors ${animationsEnabled ? 'bg-primary' : 'bg-muted/30'}`}>
+                         <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${animationsEnabled ? 'left-4.5' : 'left-0.5'}`} />
                       </div>
                     </button>
 

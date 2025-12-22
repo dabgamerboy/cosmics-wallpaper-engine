@@ -33,6 +33,18 @@ export enum ImageSize {
   x4K = "4K",
 }
 
+export type Theme = 'light' | 'dark' | 'cosmic' | 'sunset' | 'forest' | 'cyber' | 'custom';
+
+export interface CustomThemeColors {
+  background: string;
+  surface: string;
+  foreground: string;
+  muted: string;
+  border: string;
+  primary: string;
+  secondary: string;
+}
+
 export type RandomCategory = string;
 
 export interface GenerationConfig {
