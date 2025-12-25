@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { History, Book, Download, Maximize2, Play, Bookmark, BookmarkCheck, Settings, DownloadCloud, UploadCloud, Key, ChevronRight, Sparkles, Undo2, Redo2, Bug, Sun, Moon, Palette, Check, Pipette, ZapOff } from 'lucide-react';
+import { History, Book, Download, Maximize2, Play, Bookmark, BookmarkCheck, Settings, DownloadCloud, UploadCloud, Key, ChevronRight, Sparkles, Undo2, Redo2, Bug, Sun, Moon, Palette, Check, Pipette, ZapOff, Info } from 'lucide-react';
 import SidebarList from './components/HistorySidebar';
 import Controls from './components/Controls';
 import WallpaperDisplay from './components/WallpaperDisplay';
 import EditingTools from './components/EditingTools';
 import DebugOverlay from './components/DebugOverlay';
+import HelpModal from './components/HelpModal';
 import { Wallpaper, GenerationConfig, ModelType, WallpaperType, AspectRatio, ImageSize, Theme, CustomThemeColors } from './types';
 import { generateWallpaperImage, generateWallpaperVideo, checkApiKeySelection, promptApiKeySelection, editWallpaper } from './services/geminiService';
 import * as db from './services/dbService';
@@ -43,6 +44,13 @@ const App: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [showEditTools, setShowEditTools] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  
+  // Initialize help modal visibility based on first-time visit
+  const [showHelp, setShowHelp] = useState(() => {
+    const seen = localStorage.getItem('cosmic-help-seen');
+    return seen !== 'true';
+  });
+
   const [hasProKey, setHasProKey] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -93,7 +101,6 @@ const App: React.FC = () => {
       root.style.setProperty('--color-primary', customColors.primary);
       root.style.setProperty('--color-secondary', customColors.secondary);
     } else {
-      // Clear custom styles when using predefined themes
       root.style.removeProperty('--color-background');
       root.style.removeProperty('--color-surface');
       root.style.removeProperty('--color-foreground');
@@ -189,8 +196,6 @@ const App: React.FC = () => {
 
       setHistory((prev) => [newWallpaper, ...prev]);
       setCurrentWallpaper(newWallpaper);
-      
-      // Clear session stacks on new generation
       setUndoStack([]);
       setRedoStack([]);
     } catch (error) {
@@ -228,9 +233,8 @@ const App: React.FC = () => {
         categories: ['Edit'],
       };
 
-      // Handle Undo Stack: Push current before updating
       setUndoStack(prev => [...prev, currentWallpaper]);
-      setRedoStack([]); // Clear redo on new action
+      setRedoStack([]);
 
       await db.saveWallpaper('history', editedWallpaper);
       setHistory((prev) => [editedWallpaper, ...prev]);
@@ -252,7 +256,7 @@ const App: React.FC = () => {
       const config: GenerationConfig = {
         prompt: motionPrompt,
         aspectRatio: currentWallpaper.aspectRatio,
-        model: ModelType.Standard, // Video model is fixed in service
+        model: ModelType.Standard,
         imageSize: ImageSize.x1K,
         type: WallpaperType.video,
         categories: ['Animate'],
@@ -276,8 +280,6 @@ const App: React.FC = () => {
       setHistory((prev) => [animatedWallpaper, ...prev]);
       setCurrentWallpaper(animatedWallpaper);
       setShowEditTools(false);
-      
-      // Clear undo/redo as we switched modality to video
       setUndoStack([]);
       setRedoStack([]);
     } catch (error) {
@@ -364,7 +366,7 @@ const App: React.FC = () => {
 
   const handleDeleteLibraryBulk = async (ids: string[]) => {
     try {
-      await Promise.all(ids.map(id => db.deleteWallpaper('library', id)));
+      await Promise.all(ids.map(id => db.deleteWallpaper('history', id)));
       setLibrary((prev) => prev.filter(wp => !ids.includes(wp.id)));
       if (currentWallpaper && ids.includes(currentWallpaper.id)) setCurrentWallpaper(null);
     } catch (e) {
@@ -433,6 +435,11 @@ const App: React.FC = () => {
     reader.readAsText(file);
   };
 
+  const handleCloseHelp = () => {
+    setShowHelp(false);
+    localStorage.setItem('cosmic-help-seen', 'true');
+  };
+
   return (
     <div className="relative w-full h-screen bg-background overflow-hidden text-foreground font-sans selection:bg-secondary selection:text-white transition-colors duration-500">
       {!currentWallpaper && <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/10 via-background to-purple-900/10 animate-gradient-x -z-10" />}
@@ -448,7 +455,6 @@ const App: React.FC = () => {
         <>
           <WallpaperDisplay currentWallpaper={currentWallpaper} onClose={() => { setCurrentWallpaper(null); setUndoStack([]); setRedoStack([]); }} />
 
-          {/* Cog Menu */}
           {!activeSidebar && (
             <div className="absolute top-0 left-0 p-6 z-50" ref={menuRef}>
               <button 
@@ -598,6 +604,17 @@ const App: React.FC = () => {
                     </button>
 
                     <div className="my-2 h-px bg-border mx-3"></div>
+                    <div className="px-3 py-2 text-[10px] font-bold text-muted uppercase tracking-widest">Support</div>
+
+                    <button 
+                      onClick={() => { setShowHelp(true); setIsMenuOpen(false); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-primary/10 rounded-xl transition-colors text-primary"
+                    >
+                      <span className="hidden sm:inline font-medium">Help & Instructions</span>
+                      <Info size={18} />
+                    </button>
+
+                    <div className="my-2 h-px bg-border mx-3"></div>
                     <div className="px-3 py-2 text-[10px] font-bold text-muted uppercase tracking-widest">System</div>
                     
                     <button 
@@ -648,7 +665,6 @@ const App: React.FC = () => {
           <div className="absolute top-0 right-0 p-6 flex justify-end z-30 pointer-events-none">
             {currentWallpaper && (
                 <div className="flex gap-2 items-center">
-                    {/* Undo/Redo Buttons */}
                     <div className="flex gap-1 mr-2 pointer-events-auto">
                         <button 
                           onClick={handleUndo}
@@ -729,6 +745,7 @@ const App: React.FC = () => {
               onClose={() => setShowEditTools(false)}
               onEdit={handleApplyEdit}
               onAnimate={handleAnimateWallpaper}
+              onRequestProKey={promptApiKeySelection}
               isProcessing={isEditing}
               hasProKey={hasProKey}
               currentAspectRatio={currentWallpaper.aspectRatio}
@@ -736,17 +753,19 @@ const App: React.FC = () => {
           )}
 
           <DebugOverlay isOpen={showDebug} onClose={() => setShowDebug(false)} />
-
-          <Controls 
-            isGenerating={isGenerating || isEditing} 
-            onGenerate={handleGenerate} 
-            onRequestProKey={() => promptApiKeySelection().then(checkApiKeySelection).then(setHasProKey)} 
-            hasProKey={hasProKey}
-            promptHistory={promptHistory}
-            onClearPromptHistory={handleClearPromptHistory}
-          />
+          <HelpModal isOpen={showHelp} onClose={handleCloseHelp} />
         </>
       )}
+
+      <Controls 
+        isGenerating={isGenerating} 
+        onGenerate={handleGenerate} 
+        onRequestProKey={promptApiKeySelection} 
+        hasProKey={hasProKey}
+        promptHistory={promptHistory}
+        onClearPromptHistory={handleClearPromptHistory}
+        hasActiveWallpaper={!!currentWallpaper}
+      />
     </div>
   );
 };

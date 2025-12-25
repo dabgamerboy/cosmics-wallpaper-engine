@@ -61,6 +61,13 @@ export const generateWallpaperImage = async (config: GenerationConfig): Promise<
     throw new Error("No image data found in the response.");
   } catch (error: any) {
     logger.error(SOURCE, "Gemini Generation Error", { message: error.message, stack: error.stack });
+    
+    // Explicit handle for key selection race or stale keys
+    if (error.message?.includes("Requested entity was not found") || error.message?.includes("API_KEY")) {
+       await promptApiKeySelection();
+       throw new Error("API Key issue detected. Re-authentication prompted. Please try generating again.");
+    }
+    
     throw error;
   }
 };

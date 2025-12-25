@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AspectRatio, ModelType, GenerationConfig, ImageSize, WallpaperType, RandomCategory } from '../types';
 import { generateRandomPrompt } from '../services/geminiService';
-import { Wand2, LayoutTemplate, Zap, Lock, ChevronDown, Film, Image as ImageIcon, Dice5, Check, Upload, X, Plus, Clock, ListRestart, Trash2 } from 'lucide-react';
+import { Wand2, LayoutTemplate, Zap, Lock, ChevronDown, Film, Image as ImageIcon, Dice5, Check, Upload, X, Plus, Clock, ListRestart, Trash2, Sparkles, ShieldCheck, Monitor, Search, Tag, Filter, ChevronRight, History } from 'lucide-react';
 
 interface ControlsProps {
   isGenerating: boolean;
@@ -11,31 +11,94 @@ interface ControlsProps {
   hasProKey: boolean;
   promptHistory: string[];
   onClearPromptHistory: () => void;
+  hasActiveWallpaper: boolean;
 }
 
-const INITIAL_CATEGORIES: RandomCategory[] = [
-  'Any', 'Anime', 'Cyberpunk', 'Earthy', 'Sci-Fi', 'Space', 'Ocean', 'Cars', 'Fantasy', 
-  'Abstract', 'Cityscape', 'Surreal', 'Funny', 'Liminal', 'Horror', 'Animals', 'Food', 'Sports', 'Glitch', 'Matrix', 'Soundwave'
-];
+// Structured category hierarchy - Heavily expanded
+const CATEGORY_HIERARCHY: Record<string, string[]> = {
+  'Cars': [
+    'Hypercars', 'JDM Drift', 'American Muscle', 'Cyber-Trucks', 
+    'Vintage Classics', 'Formula 1', 'Rally Off-road', 'Custom Lowriders', 
+    'Electric Supercars', 'Luxury Grand Tourers', 'Steampunk Engines'
+  ],
+  'Space': [
+    'Deep Space Hub', 'Martian Colony', 'Dyson Spheres', 'Black Holes', 
+    'Nebula Clouds', 'Asteroid Mining', 'Alien Moons', 'Wormhole Portals', 
+    'Starship Cockpits', 'Binary Star Systems', 'Galactic Voids'
+  ],
+  'Nature': [
+    'Bioluminescent Swamps', 'Crystal Deserts', 'Sky Islands', 'Petrified Forests', 
+    'Alpine Peaks', 'Tropical Reefs', 'Aurora Borealis', 'Icy Tundra', 
+    'Volcanic Islands', 'Autumn Canyons', 'Enchanted Meadows'
+  ],
+  'Anime': [
+    'Cyberpunk Edgerunners Style', 'Studio Ghibli Lushness', '90s Retro OVA', 
+    'Dark Shonen Action', 'Isekai Fantasy World', 'Lofi Chill Study Vibe', 
+    'Mecha Hangar', 'Makoto Shinkai Skies', 'Neon Tokyo Nights'
+  ],
+  'Cityscape': [
+    'Solarpunk Eco-Cities', 'Brutalist Concrete', 'Flooded Metropolises', 
+    'Vertical Slums', 'Neon Alleyways', 'Ancient Steampunk Town', 
+    'Modern Smart City', 'Post-Apocalyptic Ruins', 'Venetian Waterways'
+  ],
+  'Animals': [
+    'Cosmic Whales', 'Cybernetic Wolves', 'Mythic Griffins', 'Deep Sea Horrors', 
+    'Spirit Animals', 'Geometric Beasts', 'Space Jellyfish', 
+    'Ancient Mammoths', 'Phoenix Rising', 'Mechanical Birds'
+  ],
+  'Fantasy': [
+    'Floating Sky Castles', 'Dark Dungeon Spires', 'Runed Magic Portals', 
+    'Elven Forest Cities', 'Dragon Nest Peaks', 'Wizard Sanctums', 
+    'Sunken Atlantis', 'Celestial Plains', 'Crystal Palaces'
+  ],
+  'Surreal': [
+    'Melting Dreamscapes', 'Impossible Geometry', 'Floating Water Spheres', 
+    'Cloud Cities', 'Infinite Mirror Rooms', 'Time Dilation Fields', 
+    'Abstract Mindscapes', 'Gravity-Defying Oceans'
+  ],
+  'Abstract': [
+    'Liquid Chrome Flow', 'Iridescent Glass Shards', '4D Fractal Voids', 
+    'Glitch Art Aesthetic', 'Vaporwave Gradients', 'Minimalist Zen Lines', 
+    'Geometric Volumetrics', 'Paint Splatter Chaos'
+  ],
+  'Food': [
+    'Neon Ramen Shops', 'Space Rations', 'Molecular Gastronomy', 
+    'Medieval Feasts', 'Cyberpunk Sushi', 'Fantasy Nectar', 
+    'Galactic Pastries'
+  ],
+  'Sports': [
+    'Anti-gravity Racing', 'Neon Hover-boarding', 'Zero-G Combat Sports', 
+    'Mecha Boxing', 'Futuristic Night Surf', 'Cyberpunk Skatepark'
+  ]
+};
 
-const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequestProKey, hasProKey, promptHistory, onClearPromptHistory }) => {
+const TOP_LEVEL_CATEGORIES = ['Any', ...Object.keys(CATEGORY_HIERARCHY)];
+
+const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequestProKey, hasProKey, promptHistory, onClearPromptHistory, hasActiveWallpaper }) => {
   const [prompt, setPrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(AspectRatio.Landscape);
+  
+  // Free-tier defaults as requested
   const [model, setModel] = useState<ModelType>(ModelType.Standard);
   const [imageSize, setImageSize] = useState<ImageSize>(ImageSize.x1K);
   const [type, setType] = useState<WallpaperType>(WallpaperType.image);
-  const [isRandomizing, setIsRandomizing] = useState(false);
   
+  const [isRandomizing, setIsRandomizing] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [allCategories, setAllCategories] = useState<RandomCategory[]>(INITIAL_CATEGORIES);
+  const [allCategories, setAllCategories] = useState<string[]>(TOP_LEVEL_CATEGORIES);
   const [selectedCategories, setSelectedCategories] = useState<RandomCategory[]>(['Any']);
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  
   const [showPromptHistory, setShowPromptHistory] = useState(false);
   const [isAddingCustom, setIsAddingCustom] = useState(false);
   const [customInput, setCustomInput] = useState('');
   
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyFilterTag, setHistoryFilterTag] = useState<string | null>(null);
+
   const categoryMenuRef = useRef<HTMLDivElement>(null);
   const promptHistoryRef = useRef<HTMLDivElement>(null);
   const customInputRef = useRef<HTMLInputElement>(null);
@@ -51,6 +114,8 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
       }
       if (promptHistoryRef.current && !promptHistoryRef.current.contains(event.target as Node)) {
         setShowPromptHistory(false);
+        setHistorySearch('');
+        setHistoryFilterTag(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -65,30 +130,21 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
     }
   }, [type]);
 
-  // Improved ETA logic
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (isGenerating) {
       setSecondsRemaining(prev => {
         if (prev === null) {
-          // Calculate dynamic ETA
           let eta = 0;
-          const complexityFactor = Math.min(Math.floor(prompt.length / 40), 5); // Max 5s bonus for complexity
-          
-          if (type === WallpaperType.video) {
-            eta = 65 + (complexityFactor * 2); // Videos take ~1min+
-          } else if (model === ModelType.Pro) {
-            eta = 22 + complexityFactor; // Pro is ~20s
-          } else {
-            eta = 5 + complexityFactor; // Flash is fast
-          }
-          
+          const complexityFactor = Math.min(Math.floor(prompt.length / 40), 5);
+          if (type === WallpaperType.video) eta = 65 + (complexityFactor * 2);
+          else if (model === ModelType.Pro) eta = 22 + complexityFactor;
+          else eta = 5 + complexityFactor;
           setInitialEta(eta);
           return eta;
         }
         return prev;
       });
-      
       interval = setInterval(() => {
         setSecondsRemaining(prev => (prev === null || prev <= 0) ? 0 : prev - 1);
       }, 1000);
@@ -99,10 +155,11 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
     return () => clearInterval(interval);
   }, [isGenerating, type, model, prompt]); 
 
-  const toggleCategory = (cat: RandomCategory) => {
+  const toggleCategory = (cat: string) => {
     setSelectedCategories(prev => {
       if (cat === 'Any') return ['Any'];
       const withoutAny = prev.filter(c => c !== 'Any');
+      
       if (prev.includes(cat)) {
         const next = withoutAny.filter(c => c !== cat);
         return next.length === 0 ? ['Any'] : next;
@@ -112,23 +169,24 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
     });
   };
 
+  const toggleParentExpansion = (parent: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedParents(prev => {
+      const next = new Set(prev);
+      if (next.has(parent)) next.delete(parent);
+      else next.add(parent);
+      return next;
+    });
+  };
+
   const handleAddCustom = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const trimmed = customInput.trim();
     if (!trimmed) return;
-    
     if (!allCategories.includes(trimmed)) {
       setAllCategories(prev => [...prev, trimmed]);
     }
-    
-    setSelectedCategories(prev => {
-      const withoutAny = prev.filter(c => c !== 'Any');
-      if (!withoutAny.includes(trimmed)) {
-        return [...withoutAny, trimmed];
-      }
-      return withoutAny;
-    });
-    
+    toggleCategory(trimmed);
     setCustomInput('');
     setIsAddingCustom(false);
   };
@@ -136,7 +194,6 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!prompt.trim() && !selectedImage) return;
-
     onGenerate({
         prompt,
         aspectRatio,
@@ -164,10 +221,10 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
   };
 
   const handleModelChange = (newModel: ModelType) => {
-    setModel(newModel);
     if (newModel === ModelType.Pro && !hasProKey) {
        onRequestProKey();
     }
+    setModel(newModel);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -199,15 +256,36 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
     }
   };
 
-  const currentCategoryLabel = selectedCategories.length === 0
-    ? 'Custom'
-    : selectedCategories.includes('Any') 
-      ? 'Any' 
-      : selectedCategories.length > 2 
-        ? `Mix (${selectedCategories.length})` 
-        : selectedCategories.join(' + ');
+  const currentCategoryLabel = useMemo(() => {
+    if (selectedCategories.length === 0) return 'Custom';
+    if (selectedCategories.includes('Any')) return 'Any';
+    if (selectedCategories.length > 1) return `Mix (${selectedCategories.length})`;
+    return selectedCategories[0];
+  }, [selectedCategories]);
 
-  // Calculate progress percentage for a subtle bar
+  const filteredHistory = useMemo(() => {
+    return promptHistory.filter(p => {
+      const matchesSearch = p.toLowerCase().includes(historySearch.toLowerCase());
+      const matchesTag = !historyFilterTag || p.toLowerCase().includes(historyFilterTag.toLowerCase());
+      return matchesSearch && matchesTag;
+    });
+  }, [promptHistory, historySearch, historyFilterTag]);
+
+  const historyTags = useMemo(() => {
+    const counts: Record<string, number> = {};
+    promptHistory.forEach(p => {
+      TOP_LEVEL_CATEGORIES.forEach(cat => {
+        if (cat !== 'Any' && p.toLowerCase().includes(cat.toLowerCase())) {
+          counts[cat] = (counts[cat] || 0) + 1;
+        }
+      });
+    });
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([name]) => name);
+  }, [promptHistory]);
+
   const progress = initialEta > 0 && secondsRemaining !== null 
     ? Math.max(0, Math.min(100, ((initialEta - secondsRemaining) / initialEta) * 100))
     : 0;
@@ -222,19 +300,37 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
           75% { transform: translate(-3px, -3px); }
           100% { transform: translate(0, 0); }
         }
-        .animate-figure8 {
-          animation: figure8 1s linear infinite;
-        }
+        .animate-figure8 { animation: figure8 1s linear infinite; }
+        .glow-primary { box-shadow: 0 0 15px rgba(129, 140, 248, 0.3); }
+        .custom-scrollbar-hidden::-webkit-scrollbar { display: none; }
       `}</style>
-      <div className="w-full max-w-3xl bg-surface/90 backdrop-blur-xl border border-border rounded-2xl shadow-2xl p-4 pointer-events-auto transition-all duration-300 relative">
-        {/* Subtle Progress Bar */}
+      <div className="w-full max-w-4xl bg-surface/90 backdrop-blur-xl border border-border rounded-2xl shadow-2xl p-5 pointer-events-auto transition-all duration-300 relative">
         {isGenerating && (
           <div className="absolute top-0 left-0 h-1 bg-gradient-to-r from-primary to-secondary transition-all duration-1000 rounded-t-2xl z-10" style={{ width: `${progress}%` }} />
         )}
         
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           <div className="flex gap-3 relative z-20">
-            <div className="relative flex items-stretch rounded-xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-border transition-all hover:scale-105 active:scale-95 group" ref={categoryMenuRef}>
+            {!hasActiveWallpaper && (
+              <div className="hidden lg:flex items-center gap-3 pr-4 border-r border-border mr-1 animate-in slide-in-from-left duration-700 ease-out">
+                <div className="relative group w-12 h-12 shrink-0 rounded-lg overflow-hidden border border-primary/20 bg-background/50 flex items-center justify-center">
+                  <img 
+                    src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=120&q=80" 
+                    alt="Engine Status" 
+                    className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:scale-110 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-primary/10 mix-blend-overlay" />
+                  <Monitor className={`relative z-10 text-primary transition-all duration-500 ${isGenerating ? 'animate-pulse scale-110 text-yellow-400' : 'opacity-80'}`} size={20} />
+                  {isGenerating && <div className="absolute inset-0 bg-primary/20 animate-pulse" />}
+                </div>
+                <div className="flex flex-col whitespace-nowrap min-w-[70px]">
+                  <span className="text-[10px] font-black text-primary uppercase tracking-widest">{isGenerating ? 'Dreaming' : 'Idle'}</span>
+                  <span className="text-[8px] font-bold text-muted uppercase tracking-tighter">{isGenerating ? 'Engine Warm' : 'System Ready'}</span>
+                </div>
+              </div>
+            )}
+
+            <div className="relative flex items-stretch rounded-xl bg-background border border-border transition-all hover:border-muted group" ref={categoryMenuRef}>
                 <button
                   type="button"
                   onClick={handleRandom}
@@ -257,34 +353,55 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
                   <div className="absolute bottom-full mb-3 left-0 w-64 bg-surface/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1 z-[100] animate-in slide-in-from-bottom-4 duration-200">
                      <div className="px-3 py-2 flex items-center justify-between border-b border-border mb-1">
                         <span className="text-xs font-bold text-muted uppercase tracking-wider">Mix & Match</span>
-                        <button 
-                          type="button" 
-                          onClick={() => setSelectedCategories(['Any'])}
-                          className="text-[10px] text-primary hover:underline font-bold"
-                        >RESET ALL</button>
+                        <button type="button" onClick={() => setSelectedCategories(['Any'])} className="text-[10px] text-primary hover:underline font-bold">RESET ALL</button>
                      </div>
-                     <div className="max-h-60 overflow-y-auto pr-1 space-y-0.5 custom-scrollbar mb-1 px-1">
-                        {allCategories.map((cat) => (
-                           <button
-                              key={cat}
-                              type="button"
-                              onClick={() => toggleCategory(cat)}
-                              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${selectedCategories.includes(cat) ? 'bg-primary/20 text-foreground' : 'text-muted hover:bg-primary/10 hover:text-foreground'}`}
-                           >
-                              <span className="truncate pr-2">{cat}</span>
-                              {selectedCategories.includes(cat) && <Check size={14} className="text-primary shrink-0" />}
-                           </button>
-                        ))}
+                     <div className="max-h-[350px] overflow-y-auto pr-1 space-y-0.5 custom-scrollbar mb-1 px-1">
+                        {allCategories.map((cat) => {
+                           const hasSubs = CATEGORY_HIERARCHY[cat] && CATEGORY_HIERARCHY[cat].length > 0;
+                           const isExpanded = expandedParents.has(cat);
+                           return (
+                             <React.Fragment key={cat}>
+                               <div
+                                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${selectedCategories.includes(cat) ? 'bg-primary/20 text-foreground' : 'text-muted hover:bg-primary/10 hover:text-foreground'}`}
+                                  onClick={() => toggleCategory(cat)}
+                               >
+                                  <div className="flex items-center gap-2 truncate">
+                                    {hasSubs && (
+                                      <button 
+                                        onClick={(e) => toggleParentExpansion(cat, e)} 
+                                        className={`p-0.5 hover:bg-primary/20 rounded transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                                      >
+                                        <ChevronRight size={12} />
+                                      </button>
+                                    )}
+                                    <span className="truncate">{cat}</span>
+                                  </div>
+                                  {selectedCategories.includes(cat) && <Check size={14} className="text-primary shrink-0" />}
+                               </div>
+                               
+                               {hasSubs && isExpanded && (
+                                 <div className="ml-4 pl-3 border-l-2 border-primary/20 mb-1 space-y-0.5 animate-in slide-in-from-left-2">
+                                    {CATEGORY_HIERARCHY[cat].map(sub => (
+                                      <button
+                                        key={sub}
+                                        type="button"
+                                        onClick={() => toggleCategory(`${cat} (${sub})`)}
+                                        className={`w-full text-left px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-between ${selectedCategories.includes(`${cat} (${sub})`) ? 'bg-primary/10 text-primary' : 'text-muted hover:bg-surface hover:text-foreground'}`}
+                                      >
+                                        <span className="truncate pr-2">{sub}</span>
+                                        {selectedCategories.includes(`${cat} (${sub})`) && <Check size={10} />}
+                                      </button>
+                                    ))}
+                                 </div>
+                               )}
+                             </React.Fragment>
+                           );
+                        })}
                      </div>
                      <div className="border-t border-border p-1 pt-2">
                         {!isAddingCustom ? (
-                          <button 
-                            type="button" 
-                            onClick={() => { setIsAddingCustom(true); setTimeout(() => customInputRef.current?.focus(), 50); }}
-                            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-muted hover:bg-primary/10 hover:text-foreground transition-colors uppercase tracking-wider"
-                          >
-                            <Plus size={14} />
-                            Other
+                          <button type="button" onClick={() => { setIsAddingCustom(true); setTimeout(() => customInputRef.current?.focus(), 50); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-muted hover:bg-primary/10 hover:text-foreground transition-colors uppercase tracking-wider">
+                            <Plus size={14} /> Other
                           </button>
                         ) : (
                           <div className="flex items-center gap-2 px-1 animate-in slide-in-from-left-2 duration-200">
@@ -297,18 +414,10 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
                                placeholder="Type category..."
                                className="flex-1 bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground placeholder-muted focus:outline-none focus:ring-1 focus:ring-primary/50"
                              />
-                             <button 
-                               type="button" 
-                               onClick={() => handleAddCustom()}
-                               className="p-1.5 bg-primary/20 hover:bg-primary hover:text-white text-primary rounded-lg transition-colors"
-                             >
+                             <button type="button" onClick={() => handleAddCustom()} className="p-1.5 bg-primary/20 hover:bg-primary hover:text-white text-primary rounded-lg transition-colors">
                                 <Plus size={14} />
                              </button>
-                             <button 
-                               type="button" 
-                               onClick={() => setIsAddingCustom(false)}
-                               className="p-1.5 hover:bg-border text-muted rounded-lg transition-colors"
-                             >
+                             <button type="button" onClick={() => setIsAddingCustom(false)} className="p-1.5 hover:bg-border text-muted rounded-lg transition-colors">
                                 <X size={14} />
                              </button>
                           </div>
@@ -331,7 +440,7 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
             </div>
 
             <div className="flex-1 relative flex items-center">
-                <div className="absolute left-3 z-10" ref={promptHistoryRef}>
+                <div className="absolute left-3 z-30" ref={promptHistoryRef}>
                    <button 
                     type="button" 
                     onClick={() => setShowPromptHistory(!showPromptHistory)}
@@ -339,33 +448,51 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
                     className="p-1 text-muted hover:text-primary transition-colors disabled:opacity-0"
                     title="Prompt History"
                    >
-                     <ListRestart size={18} />
+                     <History size={18} />
                    </button>
                    {showPromptHistory && (
-                     <div className="absolute bottom-full mb-3 left-0 w-80 bg-surface/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1 z-[100] animate-in slide-in-from-bottom-4 duration-200">
-                        <div className="px-3 py-2 flex items-center justify-between border-b border-border mb-1">
-                          <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Recent Prompts</span>
-                          <button 
-                            type="button" 
-                            onClick={onClearPromptHistory}
-                            className="p-1 text-red-400 hover:text-red-500 transition-colors"
-                            title="Clear History"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                     <div className="absolute bottom-full mb-3 left-0 w-80 bg-surface/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-0 z-[100] animate-in slide-in-from-bottom-4 duration-200 overflow-hidden flex flex-col">
+                        <div className="px-3 py-2.5 flex items-center justify-between border-b border-border bg-background/30">
+                          <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5"><History size={10} /> Cosmic Archive</span>
+                          <button type="button" onClick={onClearPromptHistory} className="p-1 text-red-400/70 hover:text-red-500 transition-colors flex items-center gap-1" title="Purge Archive"><Trash2 size={12} /></button>
+                        </div>
+                        <div className="px-2 py-2 border-b border-border space-y-2">
+                           <div className="relative group">
+                              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted group-focus-within:text-primary transition-colors" />
+                              <input 
+                                type="text"
+                                value={historySearch}
+                                onChange={(e) => setHistorySearch(e.target.value)}
+                                placeholder="Search history..."
+                                className="w-full bg-background/50 border border-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+                              />
+                              {historySearch && <button onClick={() => setHistorySearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"><X size={12} /></button>}
+                           </div>
+                           {historyTags.length > 0 && (
+                             <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar-hidden pb-1">
+                               <Filter size={10} className="text-muted shrink-0" />
+                               {historyTags.map(tag => (
+                                 <button key={tag} type="button" onClick={() => setHistoryFilterTag(historyFilterTag === tag ? null : tag)} className={`px-2 py-0.5 rounded-full text-[9px] font-bold border transition-all whitespace-nowrap ${historyFilterTag === tag ? 'bg-primary border-primary text-white' : 'bg-background/40 border-border text-muted hover:border-muted hover:text-foreground'}`}>{tag}</button>
+                               ))}
+                             </div>
+                           )}
                         </div>
                         <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-0.5 p-1">
-                          {promptHistory.map((p, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() => { setPrompt(p); setShowPromptHistory(false); }}
-                              className="w-full text-left px-3 py-2 rounded-lg text-xs text-muted hover:bg-primary/10 hover:text-foreground transition-colors line-clamp-2"
-                            >
-                              {p}
-                            </button>
-                          ))}
+                          {filteredHistory.length === 0 ? (
+                            <div className="py-8 px-4 text-center text-muted">
+                               <Sparkles size={24} className="mx-auto mb-2 opacity-20" />
+                               <p className="text-[10px] font-medium leading-relaxed">{historySearch || historyFilterTag ? "No matches in cosmic archive." : "No entries recorded yet."}</p>
+                            </div>
+                          ) : (
+                            filteredHistory.map((p, i) => (
+                              <button key={i} type="button" onClick={() => { setPrompt(p); setShowPromptHistory(false); }} className="w-full text-left px-3 py-2.5 rounded-lg text-xs text-muted hover:bg-primary/10 hover:text-foreground transition-all group relative overflow-hidden">
+                                <div className="line-clamp-2 pr-6">{p}</div>
+                                <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"><Plus size={12} className="text-primary" /></div>
+                              </button>
+                            ))
+                          )}
                         </div>
+                        {filteredHistory.length > 0 && <div className="p-2 border-t border-border bg-background/10 text-center"><p className="text-[9px] font-bold text-muted uppercase tracking-widest">{filteredHistory.length} results</p></div>}
                      </div>
                    )}
                 </div>
@@ -373,9 +500,7 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
                     <div className="absolute bottom-full mb-3 left-0 p-1.5 bg-surface/90 backdrop-blur border border-border rounded-xl shadow-2xl animate-in slide-in-from-bottom-2 z-50">
                         <div className="relative">
                             <img src={selectedImage} alt="Preview" className="h-20 w-auto rounded-lg object-cover border border-border" />
-                            <button type="button" onClick={clearImage} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-lg hover:bg-red-600 border border-white/20 transition-transform hover:scale-110">
-                                <X size={12} />
-                            </button>
+                            <button type="button" onClick={clearImage} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-lg hover:bg-red-600 border border-white/20 transition-transform hover:scale-110"><X size={12} /></button>
                         </div>
                     </div>
                 )}
@@ -384,7 +509,7 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder={getPlaceholder()}
-                  className="w-full h-full bg-background border border-border rounded-xl pl-10 pr-4 py-3 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-transparent transition-all"
+                  className="w-full h-full bg-background border border-border rounded-xl pl-10 pr-4 py-3 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
                   disabled={isGenerating}
                 />
             </div>
@@ -392,7 +517,7 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
             <button
               type="submit"
               disabled={isGenerating || (!prompt.trim() && !selectedImage)}
-              className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-primary/20 whitespace-nowrap overflow-hidden ${isGenerating ? 'bg-gradient-to-r from-primary/80 to-secondary/80 cursor-wait text-white ring-2 ring-white/20' : 'bg-gradient-to-r from-primary to-secondary hover:brightness-110 text-white'}`}
+              className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-primary/20 whitespace-nowrap overflow-hidden ${isGenerating ? 'bg-gradient-to-r from-primary/80 to-secondary/80 cursor-wait text-white ring-2 ring-white/20' : 'bg-gradient-to-r from-primary to-secondary hover:brightness-110 text-white active:scale-95'}`}
             >
               {isGenerating ? (
                 <>
@@ -416,68 +541,70 @@ const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequest
             </button>
           </div>
 
-          <div className="flex items-center justify-between text-sm flex-wrap gap-2">
-            <div className="flex items-center gap-4">
-               <div className="flex bg-background rounded-lg p-1 border border-border">
-                  <button type="button" onClick={() => setType(WallpaperType.image)} className={`px-3 py-1 rounded-md flex items-center gap-2 transition-all ${type === WallpaperType.image ? 'bg-surface text-foreground shadow-sm' : 'text-muted hover:text-foreground'}`}>
-                    <ImageIcon size={14} />
-                    <span>Still</span>
-                  </button>
-                  <button type="button" onClick={() => { setType(WallpaperType.video); if (!hasProKey) onRequestProKey(); }} className={`px-3 py-1 rounded-md flex items-center gap-2 transition-all ${type === WallpaperType.video ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-sm border border-pink-500/30' : 'text-muted hover:text-foreground'}`}>
-                     {type !== WallpaperType.video && !hasProKey && <Lock size={12} className="text-pink-500/80" />}
-                    <Film size={14} />
-                    <span>Animate</span>
-                  </button>
-               </div>
-
-               <div className="relative group pointer-events-auto">
-                 <button type="button" className="flex items-center gap-2 text-muted hover:text-foreground transition-colors">
-                    <LayoutTemplate size={16} />
-                    <span>{aspectRatio}</span>
-                    <ChevronDown size={14} className="opacity-50" />
-                 </button>
-                 <div className="absolute bottom-full mb-2 left-0 bg-surface border border-border rounded-lg shadow-xl overflow-hidden hidden group-hover:block w-32 z-[100] transition-colors">
-                    {Object.values(AspectRatio).map((ratio) => {
-                      const disabled = type === WallpaperType.video && ratio !== AspectRatio.Landscape && ratio !== AspectRatio.Portrait;
-                      return (
-                        <button key={ratio} type="button" disabled={disabled} onClick={() => setAspectRatio(ratio)} className={`w-full text-left px-4 py-2 ${disabled ? 'opacity-30 cursor-not-allowed bg-background' : 'hover:bg-primary/10'} ${aspectRatio === ratio ? 'text-secondary font-bold' : 'text-foreground'}`}>
-                          {ratio}
-                        </button>
-                      );
-                    })}
-                 </div>
+          <div className="flex items-center justify-between text-sm flex-wrap gap-4 pt-1">
+            <div className="flex items-center gap-6">
+               <div className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-bold text-muted uppercase tracking-widest px-1">Output Type</span>
+                  <div className="flex bg-background rounded-lg p-1 border border-border">
+                    <button type="button" onClick={() => setType(WallpaperType.image)} className={`px-4 py-1.5 rounded-md flex items-center gap-2 transition-all text-xs font-medium ${type === WallpaperType.image ? 'bg-surface text-foreground shadow-sm ring-1 ring-border' : 'text-muted hover:text-foreground'}`}>
+                      <ImageIcon size={14} /> <span>Still</span>
+                    </button>
+                    <button type="button" onClick={() => { setType(WallpaperType.video); if (!hasProKey) onRequestProKey(); }} className={`px-4 py-1.5 rounded-md flex items-center gap-2 transition-all text-xs font-medium ${type === WallpaperType.video ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-sm' : 'text-muted hover:text-foreground'}`}>
+                      {!hasProKey && <Lock size={12} className="text-pink-500/80" />} <Film size={14} /> <span>Animate</span>
+                    </button>
+                  </div>
                </div>
 
                {type === WallpaperType.image && (
-                 <div className="flex bg-background rounded-lg p-1 border border-border">
-                   <button type="button" onClick={() => handleModelChange(ModelType.Standard)} className={`px-3 py-1 rounded-md flex items-center gap-2 transition-all ${model === ModelType.Standard ? 'bg-surface text-foreground shadow-sm' : 'text-muted hover:text-foreground'}`}>
-                     <Zap size={14} />
-                     <span>Flash</span>
-                   </button>
-                   <button type="button" onClick={() => handleModelChange(ModelType.Pro)} className={`px-3 py-1 rounded-md flex items-center gap-2 transition-all ${model === ModelType.Pro ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm border border-purple-500/30' : 'text-muted hover:text-foreground'}`}>
-                     {model !== ModelType.Pro && !hasProKey && <Lock size={12} className="text-yellow-500/80" />}
-                     <span>Pro</span>
-                   </button>
+                 <div className="flex flex-col gap-1.5">
+                   <span className="text-[10px] font-bold text-muted uppercase tracking-widest px-1">Generation Model</span>
+                   <div className="flex bg-background rounded-lg p-1 border border-border">
+                     <button type="button" onClick={() => setModel(ModelType.Standard)} className={`px-4 py-1.5 rounded-md flex items-center gap-2 transition-all text-xs font-medium ${model === ModelType.Standard ? 'bg-surface text-foreground shadow-sm ring-1 ring-border' : 'text-muted hover:text-foreground'}`}>
+                       <Zap size={14} className={model === ModelType.Standard ? 'text-blue-400' : ''} /> <span>Flash</span>
+                     </button>
+                     <button type="button" onClick={() => handleModelChange(ModelType.Pro)} className={`px-4 py-1.5 rounded-md flex items-center gap-2 transition-all text-xs font-medium relative group ${model === ModelType.Pro ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg glow-primary' : 'text-muted hover:text-foreground'}`}>
+                       {!hasProKey ? <Lock size={12} className="text-yellow-500/80" /> : <Sparkles size={14} className="text-yellow-300" />} <span>Pro</span>
+                       {model === ModelType.Pro && hasProKey && <ShieldCheck size={10} className="absolute -top-1 -right-1 text-green-400 fill-current" />}
+                     </button>
+                   </div>
                  </div>
                )}
+
+               <div className="flex flex-col gap-1.5">
+                 <span className="text-[10px] font-bold text-muted uppercase tracking-widest px-1">Aspect Ratio</span>
+                 <div className="relative group pointer-events-auto">
+                    <button type="button" className="flex items-center gap-2 h-[38px] px-3 bg-background border border-border rounded-lg text-muted hover:text-foreground min-w-[120px]">
+                        <LayoutTemplate size={14} /> <span className="flex-1 text-left text-xs font-medium">{aspectRatio}</span> <ChevronDown size={14} className="opacity-50" />
+                    </button>
+                    <div className="absolute bottom-full mb-2 left-0 bg-surface border border-border rounded-lg shadow-2xl overflow-hidden hidden group-hover:block w-32 z-[100] animate-in fade-in zoom-in-95">
+                        {Object.values(AspectRatio).map((ratio) => {
+                          const disabled = type === WallpaperType.video && ratio !== AspectRatio.Landscape && ratio !== AspectRatio.Portrait;
+                          return (
+                            <button key={ratio} type="button" disabled={disabled} onClick={() => setAspectRatio(ratio)} className={`w-full text-left px-4 py-2.5 text-xs transition-colors ${disabled ? 'opacity-30 cursor-not-allowed bg-background' : 'hover:bg-primary/10'} ${aspectRatio === ratio ? 'text-primary font-bold bg-primary/5' : 'text-foreground'}`}>{ratio}</button>
+                          );
+                        })}
+                    </div>
+                 </div>
+               </div>
             </div>
 
-            {/* High Res Options for Pro Model */}
-            {model === ModelType.Pro && type === WallpaperType.image && (
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-muted uppercase">Res</span>
-                <div className="flex bg-background rounded-lg p-0.5 border border-border">
-                   {["1K", "2K", "4K"].map((size: any) => (
-                      <button 
-                        key={size}
-                        type="button" 
-                        onClick={() => setImageSize(size)}
-                        className={`px-2 py-0.5 rounded text-[10px] transition-all ${imageSize === size ? 'bg-secondary text-white' : 'text-muted hover:text-foreground'}`}
-                      >{size}</button>
-                   ))}
-                </div>
-              </div>
-            )}
+            <div className="flex flex-col items-end gap-1.5 ml-auto">
+                {model === ModelType.Pro && type === WallpaperType.image ? (
+                  <>
+                    <span className="text-[10px] font-bold text-muted uppercase tracking-widest px-1">Image Resolution</span>
+                    <div className="flex bg-background rounded-lg p-1 border border-primary/30 shadow-sm">
+                       {["1K", "2K", "4K"].map((size: any) => (
+                          <button key={size} type="button" onClick={() => setImageSize(size)} className={`px-4 py-1 rounded text-xs font-bold transition-all ${imageSize === size ? 'bg-primary text-white shadow-inner' : 'text-muted hover:text-foreground'}`}>{size}</button>
+                       ))}
+                    </div>
+                  </>
+                ) : (
+                   <div className="flex flex-col items-end opacity-60">
+                      <p className="text-[9px] uppercase tracking-tighter font-bold text-muted">Current Engine</p>
+                      <p className="text-[10px] font-medium text-foreground italic">{type === WallpaperType.video ? 'VEO Fast Engine' : '2.5 Flash Rendering'}</p>
+                   </div>
+                )}
+            </div>
           </div>
         </form>
       </div>
