@@ -1,39 +1,74 @@
 
+
 import { GoogleGenAI } from "@google/genai";
 import { GenerationConfig, ModelType, WallpaperType, AspectRatio, RandomCategory, ImageSize } from "../types";
 import { logger } from "./logService";
 
 const SOURCE = "GeminiService";
 
+/**
+ * Validates the presence of an API key before making a request.
+ */
+const getClient = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("Neural Link Broken: No API Key found in environment. Please ensure the engine is properly configured.");
+  }
+  return new GoogleGenAI({ apiKey });
+};
+
+/**
+ * Generates a wallpaper image using the Gemini API.
+ */
 export const generateWallpaperImage = async (config: GenerationConfig): Promise<string> => {
   logger.info(SOURCE, `Starting image generation with model: ${config.model}`, { config });
   
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const requestConfig: any = {
-    imageConfig: {
-      aspectRatio: config.aspectRatio,
-    },
+  const ai = getClient();
+  
+  // imageSize is ONLY available for gemini-3-pro-image-preview.
+  // Passing it to gemini-2.5-flash-image will cause the API to reject the request.
+  const imageConfig: any = {
+    aspectRatio: config.aspectRatio,
   };
 
   if (config.model === ModelType.Pro) {
-    requestConfig.imageConfig.imageSize = config.imageSize;
+    imageConfig.imageSize = config.imageSize;
   }
+
+  const requestConfig: any = {
+    imageConfig,
+  };
 
   const parts: any[] = [];
 
+  // Add the base image for editing if provided
   if (config.image) {
-      const base64Data = config.image.split(',')[1];
-      const mimeType = config.image.substring(config.image.indexOf(':') + 1, config.image.indexOf(';'));
-      
-      parts.push({
-          inlineData: {
-              mimeType: mimeType,
-              data: base64Data
-          }
-      });
+    const base64Data = config.image.split(',')[1];
+    const mimeType = config.image.substring(config.image.indexOf(':') + 1, config.image.indexOf(';'));
+    
+    parts.push({
+      inlineData: {
+        mimeType: mimeType,
+        data: base64Data
+      }
+    });
   }
 
-  parts.push({ text: config.prompt || "Generate a high quality wallpaper based on this image." });
+  // Add the mask image for inpainting if provided
+  if (config.maskImage) {
+    const maskParts = config.maskImage.split(',');
+    const maskBase64 = maskParts[1];
+    const maskMime = maskParts[0].substring(maskParts[0].indexOf(':') + 1, maskParts[0].indexOf(';'));
+    parts.push({
+      inlineData: {
+        mimeType: maskMime,
+        data: maskBase64
+      }
+    });
+  }
+
+  // Ensure prompt text is always present as a part
+  parts.push({ text: config.prompt || "Generate a highly detailed desktop wallpaper." });
 
   try {
     const response = await ai.models.generateContent({
@@ -57,96 +92,40 @@ export const generateWallpaperImage = async (config: GenerationConfig): Promise<
       }
     }
 
-    logger.error(SOURCE, "No image data found in candidates response", { response });
-    throw new Error("No image data found in the response.");
+    throw new Error("The engine returned an empty response. Try a more descriptive prompt.");
   } catch (error: any) {
-    logger.error(SOURCE, "Gemini Generation Error", { message: error.message, stack: error.stack });
+    logger.error(SOURCE, "Gemini Generation Error", { message: error.message });
     
-    // Explicit handle for key selection race or stale keys
-    if (error.message?.includes("Requested entity was not found") || error.message?.includes("API_KEY")) {
-       await promptApiKeySelection();
-       throw new Error("API Key issue detected. Re-authentication prompted. Please try generating again.");
+    if (error.message?.includes("Requested entity was not found")) {
+       if (window.aistudio && window.aistudio.openSelectKey) {
+          await window.aistudio.openSelectKey();
+       }
+       throw new Error("Model access revoked or unavailable. Standard models (Flash) are recommended for free use.");
     }
     
     throw error;
   }
 };
 
-export const editWallpaper = async (
-  baseImage: string, 
-  instruction: string, 
-  config: GenerationConfig
-): Promise<string> => {
-  logger.info(SOURCE, `Starting AI edit: ${instruction}`, { instruction, config });
-  
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const base64Data = baseImage.split(',')[1];
-  const mimeType = baseImage.substring(baseImage.indexOf(':') + 1, baseImage.indexOf(';'));
-
-  const requestConfig: any = {
-    imageConfig: {
-      aspectRatio: config.aspectRatio,
-    },
-  };
-
-  if (config.model === ModelType.Pro) {
-    requestConfig.imageConfig.imageSize = config.imageSize;
-  }
-
-  try {
-    const response = await ai.models.generateContent({
-      model: config.model,
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: mimeType,
-              data: base64Data
-            }
-          },
-          { text: instruction }
-        ],
-      },
-      config: requestConfig,
-    });
-
-    if (response.candidates?.[0]?.content?.parts) {
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData?.data) {
-          logger.info(SOURCE, "AI edit successful");
-          const outMimeType = part.inlineData.mimeType || "image/png";
-          return `data:${outMimeType};base64,${part.inlineData.data}`;
-        }
-      }
-    }
-    logger.error(SOURCE, "No image data returned from edit operation", { response });
-    throw new Error("No image data returned from edit operation.");
-  } catch (error: any) {
-    logger.error(SOURCE, "Gemini Edit Error", { message: error.message, stack: error.stack });
-    throw error;
-  }
-};
-
+/**
+ * Generates a wallpaper video using the Veo model.
+ */
 export const generateWallpaperVideo = async (config: GenerationConfig): Promise<string> => {
-  logger.info(SOURCE, "Starting video generation (VEO)", { config });
-  
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getClient();
 
   try {
     let operation;
     const validAspectRatio = config.aspectRatio === AspectRatio.Portrait ? '9:16' : '16:9';
 
     if (config.image) {
-      const base64Data = config.image.split(',')[1];
-      const mimeType = config.image.substring(config.image.indexOf(':') + 1, config.image.indexOf(';'));
+      const imageParts = config.image.split(',');
+      const base64Data = imageParts[1];
+      const mimeType = imageParts[0].substring(imageParts[0].indexOf(':') + 1, imageParts[0].indexOf(';'));
 
       operation = await ai.models.generateVideos({
         model: 'veo-3.1-fast-generate-preview',
-        prompt: config.prompt || undefined,
-        image: {
-          imageBytes: base64Data,
-          mimeType: mimeType,
-        },
+        prompt: config.prompt || "Cinematic movement",
+        image: { imageBytes: base64Data, mimeType },
         config: {
           numberOfVideos: 1,
           resolution: '1080p',
@@ -156,7 +135,7 @@ export const generateWallpaperVideo = async (config: GenerationConfig): Promise<
     } else {
       operation = await ai.models.generateVideos({
         model: 'veo-3.1-fast-generate-preview',
-        prompt: config.prompt,
+        prompt: config.prompt || "A cinematic journey through time and space",
         config: {
           numberOfVideos: 1,
           resolution: '1080p',
@@ -165,116 +144,81 @@ export const generateWallpaperVideo = async (config: GenerationConfig): Promise<
       });
     }
 
-    logger.debug(SOURCE, "Video operation started", { operationId: operation.name });
-
+    // Wait for the long-running operation
     while (!operation.done) {
-      logger.debug(SOURCE, "Polling video status...");
-      await new Promise(resolve => setTimeout(resolve, 10000));
+      // Re-initialize for safety if needed, though getClient is called above
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      // Always pass operation with explicit key to match guidelines
       operation = await ai.operations.getVideosOperation({operation: operation});
     }
 
     const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (!downloadLink) {
-      logger.error(SOURCE, "Video completed but no download link", { operation });
-      throw new Error("Video generation completed but no download link was provided.");
-    }
-
-    logger.debug(SOURCE, "Fetching video bytes from VEO storage");
-    const response = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
-    if (!response.ok) {
-      logger.error(SOURCE, `VEO fetch failed: ${response.status}`, { statusText: response.statusText });
-      throw new Error(`Failed to download video: ${response.statusText}`);
-    }
-
-    const blob = await response.blob();
+    if (!downloadLink) throw new Error("Video generation failed: No download link provided.");
+    
+    const fetchResponse = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
+    const blob = await fetchResponse.blob();
     
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        logger.info(SOURCE, "Video generation successful");
-        const base64data = reader.result as string;
-        resolve(base64data);
-      };
-      reader.onerror = (e) => {
-        logger.error(SOURCE, "FileReader error during video processing", e);
-        reject(e);
-      };
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("Failed to process video buffer."));
       reader.readAsDataURL(blob);
     });
-
   } catch (error: any) {
-    logger.error(SOURCE, "Gemini Video Generation Error", { message: error.message, stack: error.stack });
+    logger.error(SOURCE, "Gemini Video Error", { message: error.message });
+    if (error.message?.includes("Requested entity was not found")) {
+      if (window.aistudio && window.aistudio.openSelectKey) {
+        await window.aistudio.openSelectKey();
+      }
+      throw new Error("Video engine requires a selected API key with billing enabled.");
+    }
     throw error;
   }
 };
 
+/**
+ * Generates a creative random wallpaper prompt using Gemini Flash.
+ */
 export const generateRandomPrompt = async (categories: RandomCategory[] = ['Any'], referenceImage?: string): Promise<string> => {
-  logger.info(SOURCE, "Generating random prompt", { categories, hasReference: !!referenceImage });
-  
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getClient();
   const parts: any[] = [];
-  let userPrompt = "";
-
   const isAny = categories.includes('Any');
-  const categoryNames = isAny ? 'random creative themes' : categories.join(' and ');
+  const categoryNames = isAny ? 'diverse creative themes' : categories.join(' and ');
 
   if (referenceImage) {
-     const base64Data = referenceImage.split(',')[1];
-     const mimeType = referenceImage.substring(referenceImage.indexOf(':') + 1, referenceImage.indexOf(';'));
-     
-     parts.push({
-         inlineData: {
-             mimeType: mimeType,
-             data: base64Data
-         }
-     });
-
-     if (isAny) {
-         userPrompt = "Analyze this image and generate a highly detailed, creative desktop wallpaper prompt based on it. Reimagine the style, lighting, or environment while keeping the main subject recognizable.";
-     } else {
-         userPrompt = `Analyze this image and generate a creative desktop wallpaper prompt that performs a stylistic fusion of the following themes: ${categoryNames}. Blend the visual language of these categories seamlessly into a single cinematic composition while using the source image as the primary layout and subject reference.`;
-     }
-     userPrompt += " Return ONLY the prompt text, no intro.";
-     parts.push({ text: userPrompt });
-
+     const refImageParts = referenceImage.split(',');
+     const base64Data = refImageParts[1];
+     const mimeType = refImageParts[0].substring(refImageParts[0].indexOf(':') + 1, refImageParts[0].indexOf(';'));
+     parts.push({ inlineData: { mimeType, data: base64Data } });
+     parts.push({ text: `Analyze this image and generate a single short creative wallpaper prompt (under 20 words) inspired by: ${categoryNames}. Return ONLY the prompt text.` });
   } else {
-    if (categories.includes('Anime') && categories.length === 1) {
-      userPrompt = "Generate a detailed, high-quality Anime style desktop wallpaper description. Make it cinematic and visually stunning (Makoto Shinkai style).";
-    } else {
-      if (isAny) {
-        userPrompt = "Generate a completely random, highly detailed, and creative image description for a desktop wallpaper. Pick a cool combination of themes (e.g. Space + Nature).";
-      } else {
-        userPrompt = `Generate a highly detailed image description for a desktop wallpaper that is a seamless hybrid of these styles: ${categoryNames}. Your goal is a 'Creative Mashup' where elements of each theme are intertwined into a unique and cohesive visual.`;
-      }
-
-      userPrompt += " IMPORTANT: The style MUST be Photorealistic or Cinematic 3D Render. AVOID: simple cartoons, vector art, or flat illustrations.";
-    }
-
-    userPrompt += " Return ONLY the detailed prompt text, no introductory phrases.";
-    parts.push({ text: userPrompt });
+     parts.push({ text: `Generate a single short creative wallpaper prompt (under 20 words) for: ${categoryNames}. Return ONLY the prompt text.` });
   }
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: { parts: parts },
+      contents: { parts },
     });
-    const result = response.text?.trim() || `A fusion of ${categoryNames} wallpaper`;
-    logger.debug(SOURCE, "Generated prompt result", { prompt: result });
-    return result;
+    return response.text?.trim() || "A beautiful cosmic horizon, ethereal lighting, 4k";
   } catch (error: any) {
-    logger.error(SOURCE, "Failed to generate random prompt", { error: error.message });
-    return "A sleek matte black sports car driving through a rainy cybercity at night, photorealistic, cinematic lighting"; 
+    return "A sleek neon cityscape at night, cinematic lighting, 4k"; 
   }
 };
 
+/**
+ * Checks if an API key has been selected using AI Studio window methods.
+ */
 export const checkApiKeySelection = async (): Promise<boolean> => {
   if (window.aistudio && window.aistudio.hasSelectedApiKey) {
     return await window.aistudio.hasSelectedApiKey();
   }
-  return true;
+  return !!process.env.API_KEY;
 };
 
+/**
+ * Opens the API key selection dialog provided by AI Studio.
+ */
 export const promptApiKeySelection = async (): Promise<void> => {
   if (window.aistudio && window.aistudio.openSelectKey) {
     await window.aistudio.openSelectKey();

@@ -1,4 +1,5 @@
 
+
 export interface Wallpaper {
   id: string;
   url: string;
@@ -22,14 +23,15 @@ export enum AspectRatio {
   Wide = "4:3", 
 }
 
+// Added Pro model type for high quality generations
 export enum ModelType {
   Standard = "gemini-2.5-flash-image",
   Pro = "gemini-3-pro-image-preview",
 }
 
+// Added x4K image size support
 export enum ImageSize {
   x1K = "1K",
-  x2K = "2K",
   x4K = "4K",
 }
 
@@ -55,6 +57,7 @@ export interface GenerationConfig {
   type: WallpaperType;
   categories: RandomCategory[];
   image?: string;
+  maskImage?: string;
 }
 
 export type LogLevel = 'info' | 'warn' | 'error' | 'debug';

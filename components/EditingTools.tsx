@@ -1,10 +1,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Eraser, Palette, Sparkles, Wand2, X, ArrowRight, Zap, Loader2, PlayCircle, CloudRain, Wind, Brush, Cpu, Layers, Image as ImageIcon, Sparkle, Key, MousePointer2, Undo } from 'lucide-react';
+import { Eraser, Palette, Sparkles, Wand2, X, ArrowRight, Zap, Loader2, PlayCircle, CloudRain, Wind, Brush, Cpu, Layers, Image as ImageIcon, Sparkle, Key, MousePointer2, Undo, ChevronLeft, Maximize2, Trash2, RefreshCcw } from 'lucide-react';
 import { ModelType, AspectRatio, ImageSize } from '../types';
 
 interface EditingToolsProps {
-  onEdit: (instruction: string, overrideModel?: ModelType, overrideSize?: ImageSize) => void;
+  onEdit: (instruction: string, overrideModel?: ModelType, overrideSize?: ImageSize, maskImage?: string) => void;
   onAnimate: (motionPrompt: string) => void;
   onRequestProKey: () => void;
   onClose: () => void;
@@ -31,13 +31,11 @@ const EditingTools: React.FC<EditingToolsProps> = ({
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasMask, setHasMask] = useState(false);
 
-  // Initialize and handle inpainting canvas
   useEffect(() => {
     if (mode === 'inpainting' && canvasRef.current) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        // Clear and match container size
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         setHasMask(false);
       }
@@ -53,34 +51,32 @@ const EditingTools: React.FC<EditingToolsProps> = ({
     let instruction = '';
     let overrideModel: ModelType | undefined;
     let overrideSize: ImageSize | undefined;
+    let maskImage: string | undefined;
+
+    if (mode === 'inpainting' && canvasRef.current) {
+        maskImage = canvasRef.current.toDataURL('image/png');
+    }
 
     switch (mode) {
       case 'remove':
-        instruction = `Remove the ${input} from the image. Blend the area naturally with the surrounding background, textures, and lighting. The result must be seamless.`;
+        instruction = `Remove ${input} from the image. Blend the area perfectly.`;
         break;
       case 'transfer':
-        instruction = `Recreate this image but apply the style of ${input}. Keep the overall composition and subjects the same, but transform the visual style completely. The atmosphere, color palette, and brushwork should reflect the ${input} style.`;
+        instruction = `Apply the style of ${input} to this image while keeping the original composition.`;
         break;
       case 'upscale':
-        instruction = `Upscale this image to a much higher resolution. Maintain all existing details, textures, and composition perfectly while enhancing sharpness and clarity. Do not change the subject.`;
+        instruction = `Upscale this image to 4K resolution, enhancing sharpness and fine details.`;
         overrideModel = ModelType.Pro;
         overrideSize = ImageSize.x4K;
         break;
       case 'inpainting':
-        instruction = `In the specific area I have highlighted, please add or transform it into: ${input}. Ensure the new content blends perfectly with the lighting, perspective, and style of the surrounding image.`;
+        instruction = `Transform the masked area of the image into: ${input}. Match surroundings perfectly.`;
         break;
     }
 
-    if (instruction) {
-      onEdit(instruction, overrideModel, overrideSize);
-    }
+    if (instruction) onEdit(instruction, overrideModel, overrideSize, maskImage);
   };
 
-  const setPreset = (preset: string) => {
-    setInput(preset);
-  };
-
-  // Canvas Drawing Logic
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     setIsDrawing(true);
     draw(e);
@@ -102,15 +98,15 @@ const EditingTools: React.FC<EditingToolsProps> = ({
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+    const x = ('touches' in e) ? (e.touches[0].clientX - rect.left) * (canvas.width / rect.width) : (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = ('touches' in e) ? (e.touches[0].clientY - rect.top) * (canvas.height / rect.height) : (e.clientY - rect.top) * (canvas.height / rect.height);
 
     ctx.lineWidth = brushSize;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = 'rgba(129, 140, 248, 0.6)'; // Cosmic primary color with alpha
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = '#818cf8';
+    ctx.strokeStyle = 'white';
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = 'rgba(129, 140, 248, 0.5)';
 
     ctx.lineTo(x, y);
     ctx.stroke();
@@ -129,24 +125,22 @@ const EditingTools: React.FC<EditingToolsProps> = ({
   };
 
   const stylePresets = [
-    { name: 'Studio Ghibli', value: 'Studio Ghibli anime style, lush hand-painted landscapes, soft lighting, whimsical atmosphere', icon: <Sparkle size={10} /> },
-    { name: 'Cyberpunk', value: 'Cyberpunk aesthetic, neon lighting, rainy nights, high-tech low-life, gritty futuristic textures', icon: <Cpu size={10} /> },
-    { name: 'Oil Painting', value: 'Classical oil painting, thick impasto brushstrokes, rich textures, dramatic lighting, canvas feel', icon: <Brush size={10} /> },
-    { name: 'Watercolor', value: 'Soft watercolor style, ethereal washes, delicate paper texture, bleeding colors', icon: <Palette size={10} /> },
-    { name: 'Synthwave', value: '80s Synthwave, retro-futurism, purple and pink gradients, digital grids, VHS glitch effects', icon: <Layers size={10} /> },
-    { name: 'Sketch', value: 'Detailed charcoal and pencil sketch, rough paper texture, hatching and cross-hatching', icon: <ImageIcon size={10} /> },
+    { name: 'Studio Ghibli', value: 'Studio Ghibli anime style', icon: <Sparkle size={10} /> },
+    { name: 'Cyberpunk', value: 'Cyberpunk neon aesthetics', icon: <Cpu size={10} /> },
+    { name: 'Oil Painting', value: 'Classical thick oil painting', icon: <Brush size={10} /> },
+    { name: 'Synthwave', value: '80s Synthwave grid style', icon: <Layers size={10} /> },
   ];
 
   return (
     <>
-      {/* Inpainting Overlay Portal-like Canvas */}
+      {/* Inpainting Mask Canvas Overlay */}
       {mode === 'inpainting' && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none">
           <div className="relative group pointer-events-auto" style={{ 
             aspectRatio: currentAspectRatio === AspectRatio.Landscape ? '16/9' : currentAspectRatio === AspectRatio.Portrait ? '9/16' : '1/1',
             width: currentAspectRatio === AspectRatio.Landscape ? '90vw' : 'auto',
             height: currentAspectRatio === AspectRatio.Landscape ? 'auto' : '80vh',
-            maxWidth: '1600px'
+            maxWidth: '1400px'
           }}>
             <canvas
               ref={canvasRef}
@@ -159,206 +153,140 @@ const EditingTools: React.FC<EditingToolsProps> = ({
               onTouchStart={startDrawing}
               onTouchEnd={stopDrawing}
               onTouchMove={draw}
-              className="absolute inset-0 w-full h-full cursor-crosshair z-10 rounded-xl"
+              className="absolute inset-0 w-full h-full cursor-crosshair z-10 rounded-3xl"
               style={{ touchAction: 'none' }}
             />
-            <div className="absolute top-4 left-4 z-20 flex gap-2">
-               <div className="bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 text-white flex items-center gap-3">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">Inpainting Mode</span>
-                  <div className="h-4 w-px bg-white/10" />
-                  <div className="flex items-center gap-2">
-                    <span className="text-[9px] text-muted uppercase">Size</span>
+            
+            {/* Contextual Mask Controls */}
+            <div className="absolute top-8 left-8 z-20 animate-in slide-in-from-left-4 duration-500">
+               <div className="glass-panel bg-surface/90 p-3 rounded-3xl border border-white/10 flex items-center gap-6 shadow-2xl pl-5 pr-4 py-3">
+                  <div className="flex flex-col gap-1 px-1">
+                    <span className="text-[8px] font-black uppercase tracking-[0.3em] text-primary">Brush Size</span>
                     <input 
-                      type="range" 
-                      min="10" 
-                      max="150" 
-                      value={brushSize} 
+                      type="range" min="10" max="150" value={brushSize} 
                       onChange={(e) => setBrushSize(parseInt(e.target.value))}
-                      className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-primary"
+                      className="w-28 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary"
                     />
                   </div>
-                  <button onClick={clearCanvas} className="p-1 hover:text-red-400 transition-colors" title="Clear Mask">
-                    <Undo size={14} />
+                  <div className="w-px h-10 bg-white/10" />
+                  <button 
+                    onClick={clearCanvas} 
+                    className="flex items-center gap-3 px-4 py-2 bg-white/5 hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 text-muted hover:text-red-400 transition-all rounded-2xl group/reset"
+                    title="Clear Current Mask"
+                  >
+                    <Trash2 size={16} className="group-hover/reset:scale-110 transition-transform" />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Reset Mask</span>
                   </button>
                </div>
             </div>
-            <div className="absolute inset-0 border-4 border-primary/40 rounded-xl pointer-events-none animate-pulse-slow" />
-          </div>
-          
-          {/* Instructions Toast */}
-          <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-surface/90 backdrop-blur-md px-6 py-3 rounded-2xl border border-primary/20 shadow-2xl animate-in fade-in slide-in-from-top-4">
-             <div className="flex items-center gap-3">
-                <MousePointer2 className="text-primary" size={18} />
-                <p className="text-sm font-medium">Brush over the area you want the AI to transform.</p>
-             </div>
           </div>
         </div>
       )}
 
-      {/* Main Sidebar Tools */}
-      <div className="absolute right-6 top-1/2 -translate-y-1/2 w-80 bg-surface/90 backdrop-blur-xl border border-border rounded-2xl shadow-2xl p-4 animate-in slide-in-from-right-4 duration-300 z-50 transition-colors">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Sparkles className="text-primary" size={18} />
-            <h3 className="font-bold text-sm uppercase tracking-wider text-foreground">AI Magic Tools</h3>
+      {/* Control Dashboard Sidebar */}
+      <div className="fixed right-8 top-1/2 -translate-y-1/2 w-[340px] glass-panel bg-surface/95 border-white/10 rounded-[2.5rem] p-6 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.6)] animate-in slide-in-from-right-8 duration-700 z-[110]">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-primary/20 text-primary shadow-[0_0_15px_rgba(129,140,248,0.3)]">
+              <Sparkles size={18} />
+            </div>
+            <div className="flex flex-col">
+              <h3 className="text-[11px] font-black uppercase tracking-[0.3em]">Magic Forge</h3>
+              <span className="text-[8px] text-muted uppercase tracking-widest mt-0.5">Edit AI Subsystem</span>
+            </div>
           </div>
-          <button onClick={onClose} className="text-muted hover:text-foreground transition-colors">
-            <X size={18} />
+          <button onClick={onClose} className="p-2 text-muted hover:text-foreground hover:bg-white/5 rounded-xl transition-all">
+            <X size={20} />
           </button>
         </div>
 
         {!mode ? (
-          <div className="space-y-2">
-            <button 
-              onClick={() => setMode('animate')}
-              className="w-full flex items-center gap-3 p-3 bg-primary/5 hover:bg-primary/10 rounded-xl border border-border transition-all text-left group"
-            >
-              <div className="p-2 bg-pink-500/20 text-pink-500 rounded-lg group-hover:scale-110 transition-transform">
-                <PlayCircle size={20} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-foreground">Animate Loop</p>
-                <p className="text-[10px] text-muted">Transform this still into a living video loop</p>
-              </div>
-            </button>
-
-            <button 
-              onClick={() => setMode('inpainting')}
-              className="w-full flex items-center gap-3 p-3 bg-primary/5 hover:bg-primary/10 rounded-xl border border-primary shadow-lg shadow-primary/5 transition-all text-left group"
-            >
-              <div className="p-2 bg-primary/20 text-primary rounded-lg group-hover:scale-110 transition-transform">
-                <Brush size={20} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-foreground">Inpainting</p>
-                <p className="text-[10px] text-muted">Brush over a specific area to change it</p>
-              </div>
-            </button>
-
-            <button 
-              onClick={() => setMode('remove')}
-              className="w-full flex items-center gap-3 p-3 bg-primary/5 hover:bg-primary/10 rounded-xl border border-border transition-all text-left group"
-            >
-              <div className="p-2 bg-red-500/20 text-red-500 rounded-lg group-hover:scale-110 transition-transform">
-                <Eraser size={20} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-foreground">Object Removal</p>
-                <p className="text-[10px] text-muted">Erase unwanted items from the scene</p>
-              </div>
-            </button>
-
-            <button 
-              onClick={() => setMode('transfer')}
-              className="w-full flex items-center gap-3 p-3 bg-primary/5 hover:bg-primary/10 rounded-xl border border-border transition-all text-left group"
-            >
-              <div className="p-2 bg-primary/20 text-primary rounded-lg group-hover:scale-110 transition-transform">
-                <Palette size={20} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-foreground">Style Transfer</p>
-                <p className="text-[10px] text-muted">Apply a new artistic style to your wallpaper</p>
-              </div>
-            </button>
-
-            <button 
-              onClick={() => setMode('upscale')}
-              className="w-full flex items-center gap-3 p-3 bg-primary/5 hover:bg-primary/10 rounded-xl border border-border transition-all text-left group"
-            >
-              <div className="p-2 bg-secondary/20 text-secondary rounded-lg group-hover:scale-110 transition-transform">
-                <Zap size={20} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-foreground">Pro Upscale</p>
-                <p className="text-[10px] text-muted">Enhance resolution to 4K using Gemini Pro</p>
-              </div>
-            </button>
+          <div className="grid grid-cols-1 gap-3">
+            {[
+              { id: 'animate', label: 'Animate', desc: 'Add fluid motion loops', icon: <PlayCircle />, color: 'text-pink-400' },
+              { id: 'inpainting', label: 'Inpaint', desc: 'Rewrite specific regions', icon: <Brush />, color: 'text-primary' },
+              { id: 'remove', label: 'Erase', desc: 'Clean objects from scene', icon: <Eraser />, color: 'text-red-400' },
+              { id: 'transfer', label: 'Reskin', desc: 'Swap artistic styles', icon: <Palette />, color: 'text-secondary' },
+              { id: 'upscale', label: 'Upscale', desc: 'Enhance to 4K clarity', icon: <Maximize2 />, color: 'text-yellow-400' },
+            ].map((tool) => (
+              <button 
+                key={tool.id} 
+                onClick={() => setMode(tool.id as EditMode)}
+                className="group w-full flex items-center gap-4 p-4 bg-black/20 hover:bg-white/5 border border-white/5 hover:border-white/10 rounded-2xl transition-all text-left"
+              >
+                <div className={`p-3 rounded-xl bg-black/40 border border-white/5 group-hover:scale-110 transition-transform ${tool.color}`}>
+                  {React.cloneElement(tool.icon as React.ReactElement, { size: 20 })}
+                </div>
+                <div className="flex flex-col">
+                  <p className="text-[10px] font-black uppercase tracking-widest">{tool.label}</p>
+                  <p className="text-[8px] text-muted tracking-tight mt-0.5">{tool.desc}</p>
+                </div>
+                <ChevronLeft size={14} className="ml-auto text-muted opacity-0 group-hover:opacity-100 group-hover:-translate-x-1 transition-all rotate-180" />
+              </button>
+            ))}
           </div>
         ) : (
-          <div className="space-y-4 animate-in fade-in duration-300">
+          <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-500">
             <button 
               onClick={() => { setMode(null); setInput(''); setHasMask(false); }}
-              className="text-[10px] font-bold text-muted hover:text-primary transition-colors flex items-center gap-1 uppercase tracking-widest"
+              className="group flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.3em] text-muted hover:text-primary transition-colors"
             >
-              <X size={12} /> Back to tools
+              <ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
+              Return to Forge
             </button>
 
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-muted uppercase">
-                {mode === 'remove' && 'What should we remove?'}
-                {mode === 'transfer' && 'Describe the new style:'}
-                {mode === 'upscale' && 'Upscale to 4K Ultra HD'}
-                {mode === 'animate' && 'Animation Motion Description'}
-                {mode === 'inpainting' && 'What should we add here?'}
-              </h4>
-              
-              {mode === 'animate' && (
-                <div className="flex flex-wrap gap-2 mb-2">
-                  <button onClick={() => setPreset("add subtle falling rain and wet surfaces")} className="px-2 py-1 bg-background hover:bg-surface border border-border rounded text-[10px] flex items-center gap-1 text-foreground transition-colors">
-                     <CloudRain size={10} /> Rain
-                  </button>
-                  <button onClick={() => setPreset("soft wind blowing through trees and fabrics")} className="px-2 py-1 bg-background hover:bg-surface border border-border rounded text-[10px] flex items-center gap-1 text-foreground transition-colors">
-                     <Wind size={10} /> Soft Wind
-                  </button>
-                  <button onClick={() => setPreset("cinematic parallax movement with subtle depth")} className="px-2 py-1 bg-background hover:bg-surface border border-border rounded text-[10px] flex items-center gap-1 text-foreground transition-colors">
-                     <ArrowRight size={10} /> Parallax
-                  </button>
-                </div>
-              )}
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <p className="text-[9px] font-black text-muted uppercase tracking-[0.3em] ml-1">Instruction</p>
+                {mode !== 'upscale' && (
+                  <textarea 
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder={
+                      mode === 'animate' ? "e.g. rain falling slowly, cinematic parallax..." :
+                      mode === 'inpainting' ? "e.g. glowing crystals, ancient statue..." :
+                      "Describe the transformation..."
+                    }
+                    className="w-full bg-black/40 border border-white/5 rounded-[1.5rem] p-5 text-[11px] h-32 resize-none focus:outline-none focus:ring-1 focus:ring-primary/40 transition-all placeholder:text-muted/20"
+                  />
+                )}
+              </div>
 
-              {mode === 'transfer' && (
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {stylePresets.map((preset) => (
-                    <button 
-                      key={preset.name}
-                      onClick={() => setPreset(preset.value)} 
-                      className={`px-2 py-1 bg-background hover:bg-surface border border-border rounded text-[10px] flex items-center gap-1 transition-colors ${input === preset.value ? 'border-primary ring-1 ring-primary text-primary' : 'text-foreground'}`}
-                    >
-                      {preset.icon} {preset.name}
-                    </button>
-                  ))}
+              {/* Presets Group */}
+              {(mode === 'transfer' || mode === 'animate') && (
+                <div className="space-y-3">
+                  <p className="text-[9px] font-black text-muted uppercase tracking-[0.3em] ml-1">Vibe Library</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(mode === 'transfer' ? stylePresets : [
+                      { name: 'Soft Rain', value: 'subtle rain falling', icon: <CloudRain size={10} /> },
+                      { name: 'Drift', value: 'soft wind blowing through', icon: <Wind size={10} /> },
+                    ]).map((preset) => (
+                      <button 
+                        key={preset.name} onClick={() => setInput(preset.value)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase border transition-all ${input === preset.value ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' : 'bg-white/5 border-white/5 text-muted hover:border-white/20'}`}
+                      >
+                        {preset.icon} {preset.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              )}
-
-              {mode !== 'upscale' && (
-                <textarea 
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder={
-                    mode === 'remove' ? 'e.g. the red car, the person in the background' : 
-                    mode === 'animate' ? 'e.g. subtle rain, moving clouds, slow zoom...' :
-                    mode === 'inpainting' ? 'e.g. a glowing white lotus, a futuristic drone...' :
-                    'e.g. Cyberpunk oil painting, Van Gogh starry night style'
-                  }
-                  className="w-full bg-background border border-border rounded-xl p-3 text-sm text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-none"
-                />
               )}
 
               {mode === 'upscale' && (
-                <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl space-y-3">
-                  <div className="flex items-start gap-3">
-                     <div className="mt-1 p-1 bg-primary/20 rounded-md text-primary shrink-0">
-                        <Zap size={14} />
-                     </div>
-                     <div className="flex-1">
-                        <p className="text-xs font-bold text-foreground">Pro Upscaling Engine</p>
-                        <p className="text-[11px] text-muted leading-relaxed mt-0.5">
-                          This re-renders your wallpaper using the advanced <strong>Gemini 3 Pro</strong> model at <strong>4K resolution</strong>. The AI enhances details and clarity while maintaining original composition.
-                        </p>
-                     </div>
+                <div className="p-5 bg-primary/5 border border-primary/20 rounded-3xl space-y-4">
+                  <div className="flex items-center gap-3">
+                     <div className="p-2 bg-primary/20 rounded-xl text-primary"><Zap size={16} /></div>
+                     <p className="text-[10px] font-black uppercase tracking-widest">4K Neural Reconstruction</p>
                   </div>
-                  
+                  <p className="text-[9px] text-muted leading-relaxed">
+                    <span className="text-foreground font-bold">Enhanced detail and clarity.</span> Reconstruct textures with <strong className="text-primary">Gemini 3 Pro</strong> for ultra-high fidelity 4K output.
+                  </p>
                   {!hasProKey && (
-                    <div className="pt-2 border-t border-primary/10">
-                      <button 
-                        onClick={onRequestProKey}
-                        className="w-full py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-600 border border-yellow-500/30 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
-                      >
-                        <Key size={12} />
-                        Enable Pro Mode to Access
-                      </button>
-                      <p className="text-[9px] text-center text-muted mt-2">Requires a paid Google Cloud API Key</p>
-                    </div>
+                    <button onClick={onRequestProKey} className="w-full py-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-[9px] font-black uppercase text-yellow-500 flex items-center justify-center gap-2">
+                      <Key size={12} /> Unlock Pro Engine
+                    </button>
                   )}
                 </div>
               )}
@@ -366,24 +294,16 @@ const EditingTools: React.FC<EditingToolsProps> = ({
               <button 
                 onClick={handleApply}
                 disabled={isProcessing || (mode !== 'upscale' && mode !== 'animate' && !input.trim()) || (mode === 'inpainting' && (!input.trim() || !hasMask))}
-                className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
-                  mode === 'animate' ? 'bg-gradient-to-r from-pink-600 to-rose-600 hover:brightness-110 text-white' : 'bg-primary hover:bg-primary/80 text-white'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                className={`w-full py-5 rounded-2xl font-black text-[11px] uppercase tracking-[0.4em] flex items-center justify-center gap-4 transition-all shadow-xl active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed ${
+                  mode === 'animate' ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-pink-500/20' : 'bg-primary text-white shadow-primary/20 hover:scale-[1.02]'
+                }`}
               >
-                {isProcessing ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    Applying Magic...
-                  </>
-                ) : (
-                  <>
-                    {mode === 'animate' ? <PlayCircle size={18} /> : mode === 'inpainting' ? <Brush size={18} /> : <Wand2 size={18} />}
-                    {mode === 'animate' ? 'Render Video' : 'Apply Edit'}
-                  </>
-                )}
+                {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Wand2 size={18} />}
+                {isProcessing ? 'Processing' : 'Execute'}
               </button>
+              
               {mode === 'inpainting' && !hasMask && !isProcessing && (
-                <p className="text-[10px] text-center text-primary animate-pulse mt-2 font-bold">Brush over the image area first</p>
+                <p className="text-[8px] font-black text-center text-primary uppercase tracking-[0.2em] animate-pulse">Select Region to Modify</p>
               )}
             </div>
           </div>

@@ -2,7 +2,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AspectRatio, ModelType, GenerationConfig, ImageSize, WallpaperType, RandomCategory } from '../types';
 import { generateRandomPrompt } from '../services/geminiService';
-import { Wand2, LayoutTemplate, Zap, Lock, ChevronDown, Film, Image as ImageIcon, Dice5, Check, Upload, X, Plus, Clock, ListRestart, Trash2, Sparkles, ShieldCheck, Monitor, Search, Tag, Filter, ChevronRight, History } from 'lucide-react';
+import { 
+  Wand2, LayoutTemplate, Zap, Star, ChevronDown, Film, 
+  Image as ImageIcon, Dice5, Check, X, Clock, Monitor, 
+  Sparkles, Binary, Aperture, Cpu, Boxes, Compass, Layers, 
+  Hash, History, Key, Lock, Search, Sliders, ChevronRight,
+  RefreshCw
+} from 'lucide-react';
 
 interface ControlsProps {
   isGenerating: boolean;
@@ -14,597 +20,363 @@ interface ControlsProps {
   hasActiveWallpaper: boolean;
 }
 
-// Structured category hierarchy - Heavily expanded
-const CATEGORY_HIERARCHY: Record<string, string[]> = {
-  'Cars': [
-    'Hypercars', 'JDM Drift', 'American Muscle', 'Cyber-Trucks', 
-    'Vintage Classics', 'Formula 1', 'Rally Off-road', 'Custom Lowriders', 
-    'Electric Supercars', 'Luxury Grand Tourers', 'Steampunk Engines'
-  ],
-  'Space': [
-    'Deep Space Hub', 'Martian Colony', 'Dyson Spheres', 'Black Holes', 
-    'Nebula Clouds', 'Asteroid Mining', 'Alien Moons', 'Wormhole Portals', 
-    'Starship Cockpits', 'Binary Star Systems', 'Galactic Voids'
-  ],
-  'Nature': [
-    'Bioluminescent Swamps', 'Crystal Deserts', 'Sky Islands', 'Petrified Forests', 
-    'Alpine Peaks', 'Tropical Reefs', 'Aurora Borealis', 'Icy Tundra', 
-    'Volcanic Islands', 'Autumn Canyons', 'Enchanted Meadows'
-  ],
-  'Anime': [
-    'Cyberpunk Edgerunners Style', 'Studio Ghibli Lushness', '90s Retro OVA', 
-    'Dark Shonen Action', 'Isekai Fantasy World', 'Lofi Chill Study Vibe', 
-    'Mecha Hangar', 'Makoto Shinkai Skies', 'Neon Tokyo Nights'
-  ],
-  'Cityscape': [
-    'Solarpunk Eco-Cities', 'Brutalist Concrete', 'Flooded Metropolises', 
-    'Vertical Slums', 'Neon Alleyways', 'Ancient Steampunk Town', 
-    'Modern Smart City', 'Post-Apocalyptic Ruins', 'Venetian Waterways'
-  ],
-  'Animals': [
-    'Cosmic Whales', 'Cybernetic Wolves', 'Mythic Griffins', 'Deep Sea Horrors', 
-    'Spirit Animals', 'Geometric Beasts', 'Space Jellyfish', 
-    'Ancient Mammoths', 'Phoenix Rising', 'Mechanical Birds'
-  ],
-  'Fantasy': [
-    'Floating Sky Castles', 'Dark Dungeon Spires', 'Runed Magic Portals', 
-    'Elven Forest Cities', 'Dragon Nest Peaks', 'Wizard Sanctums', 
-    'Sunken Atlantis', 'Celestial Plains', 'Crystal Palaces'
-  ],
-  'Surreal': [
-    'Melting Dreamscapes', 'Impossible Geometry', 'Floating Water Spheres', 
-    'Cloud Cities', 'Infinite Mirror Rooms', 'Time Dilation Fields', 
-    'Abstract Mindscapes', 'Gravity-Defying Oceans'
-  ],
-  'Abstract': [
-    'Liquid Chrome Flow', 'Iridescent Glass Shards', '4D Fractal Voids', 
-    'Glitch Art Aesthetic', 'Vaporwave Gradients', 'Minimalist Zen Lines', 
-    'Geometric Volumetrics', 'Paint Splatter Chaos'
-  ],
-  'Food': [
-    'Neon Ramen Shops', 'Space Rations', 'Molecular Gastronomy', 
-    'Medieval Feasts', 'Cyberpunk Sushi', 'Fantasy Nectar', 
-    'Galactic Pastries'
-  ],
-  'Sports': [
-    'Anti-gravity Racing', 'Neon Hover-boarding', 'Zero-G Combat Sports', 
-    'Mecha Boxing', 'Futuristic Night Surf', 'Cyberpunk Skatepark'
-  ]
-};
+interface CategoryDef {
+  label: string;
+  icon: React.ReactNode;
+  subs: string[];
+}
 
-const TOP_LEVEL_CATEGORIES = ['Any', ...Object.keys(CATEGORY_HIERARCHY)];
+const CATEGORIES: CategoryDef[] = [
+  { label: 'Abstract', icon: <Boxes size={14} />, subs: ['Minimal', 'Organic', 'Geometric', 'Fluid', 'Fractal', 'Gradient'] },
+  { label: 'Nature', icon: <Compass size={14} />, subs: ['Forest', 'Ocean', 'Mountain', 'Macro', 'Desert', 'Stormy'] },
+  { label: 'Space', icon: <Star size={14} />, subs: ['Nebula', 'Planetary', 'Starfield', 'Sci-Fi', 'Black Hole', 'Station'] },
+  { label: 'Anime', icon: <Sparkles size={14} />, subs: ['Lo-fi', 'Cinematic', 'Manga', 'Cyber-Anime', 'Ghibli-esque', '90s Retro'] },
+  { label: 'Cyberpunk', icon: <Cpu size={14} />, subs: ['Neon City', 'Android', 'Retro-tech', 'Glitch', 'Rainy Night', 'Dystopian'] },
+  { label: 'Surreal', icon: <Layers size={14} />, subs: ['Dreamcore', 'Ethereal', 'Distortion', 'Liminal', 'Upside Down', 'Psychedelic'] },
+  { label: 'Cityscape', icon: <LayoutTemplate size={14} />, subs: ['Futuristic', 'Historic', 'Aerial', 'Midnight', 'Skyscrapers', 'Street Level'] },
+  { label: 'Fantasy', icon: <History size={14} />, subs: ['Kingdom', 'Mystical', 'Legendary', 'Gothic', 'Dragon Nest', 'Magic Forest'] },
+];
 
-const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequestProKey, hasProKey, promptHistory, onClearPromptHistory, hasActiveWallpaper }) => {
+const Controls: React.FC<ControlsProps> = ({ isGenerating, onGenerate, onRequestProKey, hasProKey, hasActiveWallpaper }) => {
   const [prompt, setPrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(AspectRatio.Landscape);
-  
-  // Free-tier defaults as requested
+  const [type, setType] = useState<WallpaperType>(WallpaperType.image);
   const [model, setModel] = useState<ModelType>(ModelType.Standard);
   const [imageSize, setImageSize] = useState<ImageSize>(ImageSize.x1K);
-  const [type, setType] = useState<WallpaperType>(WallpaperType.image);
   
   const [isRandomizing, setIsRandomizing] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedSubs, setSelectedSubs] = useState<string[]>([]);
+  const [customSeed, setCustomSeed] = useState('');
   
-  const [allCategories, setAllCategories] = useState<string[]>(TOP_LEVEL_CATEGORIES);
-  const [selectedCategories, setSelectedCategories] = useState<RandomCategory[]>(['Any']);
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
-  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
-  
-  const [showPromptHistory, setShowPromptHistory] = useState(false);
-  const [isAddingCustom, setIsAddingCustom] = useState(false);
-  const [customInput, setCustomInput] = useState('');
-  
-  const [historySearch, setHistorySearch] = useState('');
-  const [historyFilterTag, setHistoryFilterTag] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>(CATEGORIES[0].label);
 
   const categoryMenuRef = useRef<HTMLDivElement>(null);
-  const promptHistoryRef = useRef<HTMLDivElement>(null);
-  const customInputRef = useRef<HTMLInputElement>(null);
-
-  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
-  const [initialEta, setInitialEta] = useState<number>(0);
+  const isPaidActive = hasProKey;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (categoryMenuRef.current && !categoryMenuRef.current.contains(event.target as Node)) {
         setShowCategoryMenu(false);
-        setIsAddingCustom(false);
-      }
-      if (promptHistoryRef.current && !promptHistoryRef.current.contains(event.target as Node)) {
-        setShowPromptHistory(false);
-        setHistorySearch('');
-        setHistoryFilterTag(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    if (type === WallpaperType.video) {
-      if (aspectRatio !== AspectRatio.Landscape && aspectRatio !== AspectRatio.Portrait) {
-        setAspectRatio(AspectRatio.Landscape);
-      }
-    }
-  }, [type]);
-
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    if (isGenerating) {
-      setSecondsRemaining(prev => {
-        if (prev === null) {
-          let eta = 0;
-          const complexityFactor = Math.min(Math.floor(prompt.length / 40), 5);
-          if (type === WallpaperType.video) eta = 65 + (complexityFactor * 2);
-          else if (model === ModelType.Pro) eta = 22 + complexityFactor;
-          else eta = 5 + complexityFactor;
-          setInitialEta(eta);
-          return eta;
-        }
-        return prev;
-      });
-      interval = setInterval(() => {
-        setSecondsRemaining(prev => (prev === null || prev <= 0) ? 0 : prev - 1);
-      }, 1000);
-    } else {
-      setSecondsRemaining(null);
-      setInitialEta(0);
-    }
-    return () => clearInterval(interval);
-  }, [isGenerating, type, model, prompt]); 
-
-  const toggleCategory = (cat: string) => {
-    setSelectedCategories(prev => {
-      if (cat === 'Any') return ['Any'];
-      const withoutAny = prev.filter(c => c !== 'Any');
-      
-      if (prev.includes(cat)) {
-        const next = withoutAny.filter(c => c !== cat);
-        return next.length === 0 ? ['Any'] : next;
-      } else {
-        return [...withoutAny, cat];
-      }
-    });
-  };
-
-  const toggleParentExpansion = (parent: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setExpandedParents(prev => {
-      const next = new Set(prev);
-      if (next.has(parent)) next.delete(parent);
-      else next.add(parent);
-      return next;
-    });
-  };
-
-  const handleAddCustom = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const trimmed = customInput.trim();
-    if (!trimmed) return;
-    if (!allCategories.includes(trimmed)) {
-      setAllCategories(prev => [...prev, trimmed]);
-    }
-    toggleCategory(trimmed);
-    setCustomInput('');
-    setIsAddingCustom(false);
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() && !selectedImage) return;
+    if (!prompt.trim()) return;
     onGenerate({
-        prompt,
-        aspectRatio,
-        model,
-        imageSize,
-        type,
-        categories: selectedCategories,
-        image: selectedImage || undefined
+        prompt, aspectRatio, model, imageSize, type,
+        categories: selectedCategories.length > 0 ? [...selectedCategories, ...selectedSubs] : ['Any']
     });
-    setShowPromptHistory(false);
   };
 
   const handleRandom = async () => {
     if (isRandomizing || isGenerating) return;
     setIsRandomizing(true);
+    
+    const filters = [
+        ...selectedCategories,
+        ...selectedSubs,
+        ...(customSeed.trim() ? [customSeed] : [])
+    ];
+
     try {
-      const catsToUse = selectedCategories.length === 0 ? ['Any'] : selectedCategories;
-      const randomPrompt = await generateRandomPrompt(catsToUse, selectedImage || undefined);
-      setPrompt(randomPrompt);
-    } catch (e) {
-      console.error("Error generating random prompt", e);
+      const result = await generateRandomPrompt(filters.length > 0 ? filters : ['Any']);
+      setPrompt(result);
+      if (showCategoryMenu) setShowCategoryMenu(false);
     } finally {
       setIsRandomizing(false);
     }
   };
 
-  const handleModelChange = (newModel: ModelType) => {
-    if (newModel === ModelType.Pro && !hasProKey) {
-       onRequestProKey();
-    }
-    setModel(newModel);
+  const toggleCategory = (cat: string) => {
+    setSelectedCategories(prev => 
+      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+    );
+    setActiveTab(cat);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-        const file = e.target.files[0];
-        const reader = new FileReader();
-        reader.onloadend = () => setSelectedImage(reader.result as string);
-        reader.readAsDataURL(file);
-    }
+  const toggleSub = (sub: string) => {
+    setSelectedSubs(prev => 
+      prev.includes(sub) ? prev.filter(s => s !== sub) : [...prev, sub]
+    );
   };
 
-  const clearImage = () => {
-    setSelectedImage(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const getPlaceholder = () => {
-    if (type === WallpaperType.video) {
-        if (selectedImage) return "Describe animation movement...";
-        return "Describe your video loop...";
-    } else {
-        if (selectedImage) return "How should we use this image?";
-        const catLabel = selectedCategories.length === 0 
-          ? '' 
-          : selectedCategories.includes('Any') 
-            ? '' 
-            : selectedCategories.join(' + ').toLowerCase() + ' ';
-        return `Describe your ${catLabel}dream wallpaper...`;
-    }
-  };
-
-  const currentCategoryLabel = useMemo(() => {
-    if (selectedCategories.length === 0) return 'Custom';
-    if (selectedCategories.includes('Any')) return 'Any';
-    if (selectedCategories.length > 1) return `Mix (${selectedCategories.length})`;
-    return selectedCategories[0];
-  }, [selectedCategories]);
-
-  const filteredHistory = useMemo(() => {
-    return promptHistory.filter(p => {
-      const matchesSearch = p.toLowerCase().includes(historySearch.toLowerCase());
-      const matchesTag = !historyFilterTag || p.toLowerCase().includes(historyFilterTag.toLowerCase());
-      return matchesSearch && matchesTag;
-    });
-  }, [promptHistory, historySearch, historyFilterTag]);
-
-  const historyTags = useMemo(() => {
-    const counts: Record<string, number> = {};
-    promptHistory.forEach(p => {
-      TOP_LEVEL_CATEGORIES.forEach(cat => {
-        if (cat !== 'Any' && p.toLowerCase().includes(cat.toLowerCase())) {
-          counts[cat] = (counts[cat] || 0) + 1;
-        }
-      });
-    });
-    return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 4)
-      .map(([name]) => name);
-  }, [promptHistory]);
-
-  const progress = initialEta > 0 && secondsRemaining !== null 
-    ? Math.max(0, Math.min(100, ((initialEta - secondsRemaining) / initialEta) * 100))
-    : 0;
+  const activeCategoryDef = useMemo(() => 
+    CATEGORIES.find(c => c.label === activeTab), 
+  [activeTab]);
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 p-6 z-10 flex justify-center items-end pointer-events-none">
-      <style>{`
-        @keyframes figure8 {
-          0% { transform: translate(0, 0); }
-          25% { transform: translate(3px, -3px); }
-          50% { transform: translate(0, 3px); }
-          75% { transform: translate(-3px, -3px); }
-          100% { transform: translate(0, 0); }
-        }
-        .animate-figure8 { animation: figure8 1s linear infinite; }
-        .glow-primary { box-shadow: 0 0 15px rgba(129, 140, 248, 0.3); }
-        .custom-scrollbar-hidden::-webkit-scrollbar { display: none; }
-      `}</style>
-      <div className="w-full max-w-4xl bg-surface/90 backdrop-blur-xl border border-border rounded-2xl shadow-2xl p-5 pointer-events-auto transition-all duration-300 relative">
-        {isGenerating && (
-          <div className="absolute top-0 left-0 h-1 bg-gradient-to-r from-primary to-secondary transition-all duration-1000 rounded-t-2xl z-10" style={{ width: `${progress}%` }} />
-        )}
+    <div className="absolute bottom-0 left-0 right-0 p-10 z-[60] flex flex-col items-center pointer-events-none">
+      
+      {/* Main Control Hub */}
+      <div className="w-full max-w-5xl glass-panel bg-surface rounded-[3.5rem] p-4 pointer-events-auto shadow-[0_40px_80px_-20px_rgba(0,0,0,0.6)] flex flex-col gap-5 border border-white/5 relative group">
         
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-          <div className="flex gap-3 relative z-20">
+        {isGenerating && (
+          <div className="absolute top-0 left-0 right-0 h-[2px] overflow-hidden rounded-t-[3.5rem]">
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-primary to-transparent w-[40%] animate-scan"></div>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+          
+          {/* Top Row: Input & Randomizer */}
+          <div className="flex gap-4 items-center">
+            
+            {/* Status Indicator Module */}
             {!hasActiveWallpaper && (
-              <div className="hidden lg:flex items-center gap-3 pr-4 border-r border-border mr-1 animate-in slide-in-from-left duration-700 ease-out">
-                <div className="relative group w-12 h-12 shrink-0 rounded-lg overflow-hidden border border-primary/20 bg-background/50 flex items-center justify-center">
-                  <img 
-                    src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=120&q=80" 
-                    alt="Engine Status" 
-                    className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:scale-110 transition-transform duration-500"
-                  />
-                  <div className="absolute inset-0 bg-primary/10 mix-blend-overlay" />
-                  <Monitor className={`relative z-10 text-primary transition-all duration-500 ${isGenerating ? 'animate-pulse scale-110 text-yellow-400' : 'opacity-80'}`} size={20} />
-                  {isGenerating && <div className="absolute inset-0 bg-primary/20 animate-pulse" />}
-                </div>
-                <div className="flex flex-col whitespace-nowrap min-w-[70px]">
-                  <span className="text-[10px] font-black text-primary uppercase tracking-widest">{isGenerating ? 'Dreaming' : 'Idle'}</span>
-                  <span className="text-[8px] font-bold text-muted uppercase tracking-tighter">{isGenerating ? 'Engine Warm' : 'System Ready'}</span>
-                </div>
+              <div className="hidden lg:flex flex-shrink-0 w-24 h-[68px] items-center justify-center rounded-[2.2rem] bg-black/40 border border-white/5 overflow-hidden relative animate-in zoom-in-95 duration-700">
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-secondary/10 opacity-30"></div>
+                {isGenerating ? (
+                  <RefreshCw size={20} className="text-primary animate-spin" />
+                ) : (
+                  <div className="flex flex-col items-center gap-1">
+                    <Monitor size={18} className="text-muted/60" />
+                    <span className="text-[7px] font-black uppercase tracking-[0.3em] text-muted/40">Engine On</span>
+                  </div>
+                )}
+                <div className="absolute inset-0 border border-primary/20 rounded-[2.2rem] animate-pulse"></div>
               </div>
             )}
 
-            <div className="relative flex items-stretch rounded-xl bg-background border border-border transition-all hover:border-muted group" ref={categoryMenuRef}>
-                <button
-                  type="button"
-                  onClick={handleRandom}
-                  disabled={isGenerating || isRandomizing}
-                  className="pl-3 pr-2 flex items-center justify-center hover:bg-primary/10 text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed rounded-l-xl"
-                  title={`Roll for ${currentCategoryLabel}`}
+            {/* Combined Randomizer Segment */}
+            <div className="flex items-center rounded-[2.2rem] bg-black/30 border border-white/5 p-1 shadow-inner h-[68px] relative">
+               <button 
+                  type="button" 
+                  onClick={handleRandom} 
+                  disabled={isGenerating || isRandomizing} 
+                  className="w-16 h-14 flex items-center justify-center hover:bg-white/5 text-primary transition-all disabled:opacity-30 group rounded-l-[1.8rem]"
                 >
-                   <Dice5 size={24} className={`transition-all duration-1000 ease-out ${isRandomizing ? 'rotate-[720deg] text-primary scale-110' : 'group-hover:rotate-45'}`} />
-                </button>
-                <div className="w-px bg-border my-2"></div>
-                <button
-                  type="button"
-                  onClick={() => setShowCategoryMenu(!showCategoryMenu)}
-                  className="px-3 hover:bg-primary/10 text-foreground transition-colors rounded-r-xl flex items-center gap-2"
-                >
-                   <span className="text-[10px] font-bold tracking-tighter uppercase whitespace-nowrap min-w-[30px]">{currentCategoryLabel}</span>
-                   <ChevronDown size={14} className={`transition-transform duration-300 ${showCategoryMenu ? 'rotate-180' : ''}`} />
-                </button>
-                {showCategoryMenu && (
-                  <div className="absolute bottom-full mb-3 left-0 w-64 bg-surface/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1 z-[100] animate-in slide-in-from-bottom-4 duration-200">
-                     <div className="px-3 py-2 flex items-center justify-between border-b border-border mb-1">
-                        <span className="text-xs font-bold text-muted uppercase tracking-wider">Mix & Match</span>
-                        <button type="button" onClick={() => setSelectedCategories(['Any'])} className="text-[10px] text-primary hover:underline font-bold">RESET ALL</button>
-                     </div>
-                     <div className="max-h-[350px] overflow-y-auto pr-1 space-y-0.5 custom-scrollbar mb-1 px-1">
-                        {allCategories.map((cat) => {
-                           const hasSubs = CATEGORY_HIERARCHY[cat] && CATEGORY_HIERARCHY[cat].length > 0;
-                           const isExpanded = expandedParents.has(cat);
-                           return (
-                             <React.Fragment key={cat}>
-                               <div
-                                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${selectedCategories.includes(cat) ? 'bg-primary/20 text-foreground' : 'text-muted hover:bg-primary/10 hover:text-foreground'}`}
-                                  onClick={() => toggleCategory(cat)}
-                               >
-                                  <div className="flex items-center gap-2 truncate">
-                                    {hasSubs && (
-                                      <button 
-                                        onClick={(e) => toggleParentExpansion(cat, e)} 
-                                        className={`p-0.5 hover:bg-primary/20 rounded transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                                      >
-                                        <ChevronRight size={12} />
-                                      </button>
-                                    )}
-                                    <span className="truncate">{cat}</span>
-                                  </div>
-                                  {selectedCategories.includes(cat) && <Check size={14} className="text-primary shrink-0" />}
-                               </div>
-                               
-                               {hasSubs && isExpanded && (
-                                 <div className="ml-4 pl-3 border-l-2 border-primary/20 mb-1 space-y-0.5 animate-in slide-in-from-left-2">
-                                    {CATEGORY_HIERARCHY[cat].map(sub => (
-                                      <button
-                                        key={sub}
-                                        type="button"
-                                        onClick={() => toggleCategory(`${cat} (${sub})`)}
-                                        className={`w-full text-left px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-between ${selectedCategories.includes(`${cat} (${sub})`) ? 'bg-primary/10 text-primary' : 'text-muted hover:bg-surface hover:text-foreground'}`}
-                                      >
-                                        <span className="truncate pr-2">{sub}</span>
-                                        {selectedCategories.includes(`${cat} (${sub})`) && <Check size={10} />}
-                                      </button>
-                                    ))}
-                                 </div>
-                               )}
-                             </React.Fragment>
-                           );
-                        })}
-                     </div>
-                     <div className="border-t border-border p-1 pt-2">
-                        {!isAddingCustom ? (
-                          <button type="button" onClick={() => { setIsAddingCustom(true); setTimeout(() => customInputRef.current?.focus(), 50); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-muted hover:bg-primary/10 hover:text-foreground transition-colors uppercase tracking-wider">
-                            <Plus size={14} /> Other
-                          </button>
-                        ) : (
-                          <div className="flex items-center gap-2 px-1 animate-in slide-in-from-left-2 duration-200">
-                             <input 
-                               ref={customInputRef}
-                               type="text" 
-                               value={customInput}
-                               onChange={(e) => setCustomInput(e.target.value)}
-                               onKeyDown={(e) => e.key === 'Enter' && handleAddCustom()}
-                               placeholder="Type category..."
-                               className="flex-1 bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground placeholder-muted focus:outline-none focus:ring-1 focus:ring-primary/50"
-                             />
-                             <button type="button" onClick={() => handleAddCustom()} className="p-1.5 bg-primary/20 hover:bg-primary hover:text-white text-primary rounded-lg transition-colors">
-                                <Plus size={14} />
-                             </button>
-                             <button type="button" onClick={() => setIsAddingCustom(false)} className="p-1.5 hover:bg-border text-muted rounded-lg transition-colors">
-                                <X size={14} />
-                             </button>
-                          </div>
-                        )}
-                     </div>
-                  </div>
-                )}
-            </div>
-            
-            <div className="relative">
-                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
-                <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`h-full px-3 rounded-xl border transition-all flex items-center justify-center ${selectedImage ? 'bg-secondary/20 border-secondary text-secondary' : 'bg-background border-border text-muted hover:text-foreground hover:bg-surface'}`}
-                    disabled={isGenerating}
-                >
-                    <Upload size={20} />
-                </button>
-            </div>
-
-            <div className="flex-1 relative flex items-center">
-                <div className="absolute left-3 z-30" ref={promptHistoryRef}>
-                   <button 
+                  <Dice5 size={24} className={isRandomizing ? 'animate-spin' : 'group-hover:rotate-45 transition-transform duration-500'} />
+               </button>
+               
+               <div className="w-[1px] h-8 bg-white/10 mx-1"></div>
+               
+               {/* Synapse Selector Dropdown */}
+               <div className="relative h-full" ref={categoryMenuRef}>
+                 <button 
                     type="button" 
-                    onClick={() => setShowPromptHistory(!showPromptHistory)}
-                    disabled={isGenerating || promptHistory.length === 0}
-                    className="p-1 text-muted hover:text-primary transition-colors disabled:opacity-0"
-                    title="Prompt History"
-                   >
-                     <History size={18} />
-                   </button>
-                   {showPromptHistory && (
-                     <div className="absolute bottom-full mb-3 left-0 w-80 bg-surface/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-0 z-[100] animate-in slide-in-from-bottom-4 duration-200 overflow-hidden flex flex-col">
-                        <div className="px-3 py-2.5 flex items-center justify-between border-b border-border bg-background/30">
-                          <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5"><History size={10} /> Cosmic Archive</span>
-                          <button type="button" onClick={onClearPromptHistory} className="p-1 text-red-400/70 hover:text-red-500 transition-colors flex items-center gap-1" title="Purge Archive"><Trash2 size={12} /></button>
+                    onClick={() => setShowCategoryMenu(!showCategoryMenu)} 
+                    className={`px-6 h-full hover:bg-white/5 text-[10px] font-black uppercase tracking-[0.25em] transition-all flex items-center gap-3 whitespace-nowrap rounded-r-[1.8rem] ${selectedCategories.length > 0 || customSeed ? 'text-primary opacity-100' : 'text-muted opacity-60'}`}
+                  >
+                   {(selectedCategories.length === 0 && !customSeed) ? 'Any Filter' : 
+                    customSeed ? `Seed: ${customSeed.length > 8 ? customSeed.slice(0, 8) + '...' : customSeed}` :
+                    selectedCategories.length === 1 ? selectedCategories[0] : 
+                    `${selectedCategories.length + selectedSubs.length} Nodes`} 
+                   <ChevronDown size={14} className={`transition-transform duration-500 ${showCategoryMenu ? 'rotate-180' : ''}`} />
+                 </button>
+
+                 {showCategoryMenu && (
+                   <div className="absolute bottom-[calc(100%+1.8rem)] left-0 w-[420px] glass-panel bg-surface/98 rounded-[2.5rem] p-7 z-[100] animate-in slide-in-from-bottom-4 shadow-2xl border border-white/10">
+                     
+                     {/* Custom Seed Section */}
+                     <div className="mb-6 space-y-3">
+                        <div className="flex items-center justify-between px-1">
+                            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-foreground flex items-center gap-2">
+                                <Binary size={12} className="text-primary" /> Custom Neural Seed
+                            </span>
+                            {customSeed && (
+                              <button onClick={() => setCustomSeed('')} className="text-[8px] font-black text-red-400 uppercase tracking-widest hover:underline">Clear</button>
+                            )}
                         </div>
-                        <div className="px-2 py-2 border-b border-border space-y-2">
-                           <div className="relative group">
-                              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted group-focus-within:text-primary transition-colors" />
-                              <input 
-                                type="text"
-                                value={historySearch}
-                                onChange={(e) => setHistorySearch(e.target.value)}
-                                placeholder="Search history..."
-                                className="w-full bg-background/50 border border-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
-                              />
-                              {historySearch && <button onClick={() => setHistorySearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"><X size={12} /></button>}
-                           </div>
-                           {historyTags.length > 0 && (
-                             <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar-hidden pb-1">
-                               <Filter size={10} className="text-muted shrink-0" />
-                               {historyTags.map(tag => (
-                                 <button key={tag} type="button" onClick={() => setHistoryFilterTag(historyFilterTag === tag ? null : tag)} className={`px-2 py-0.5 rounded-full text-[9px] font-bold border transition-all whitespace-nowrap ${historyFilterTag === tag ? 'bg-primary border-primary text-white' : 'bg-background/40 border-border text-muted hover:border-muted hover:text-foreground'}`}>{tag}</button>
-                               ))}
+                        <div className="relative">
+                          <input 
+                            type="text" 
+                            value={customSeed} 
+                            onChange={(e) => setCustomSeed(e.target.value)}
+                            placeholder="Inject concept (e.g. 'Glitchy Grapes')..."
+                            className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 px-5 text-[11px] focus:ring-1 focus:ring-primary/40 focus:outline-none placeholder:text-muted/30 font-medium"
+                          />
+                        </div>
+                     </div>
+
+                     {/* Multi-Pane Selector */}
+                     <div className="grid grid-cols-[160px_1fr] gap-4">
+                        {/* Roots Column */}
+                        <div className="space-y-1.5 overflow-y-auto max-h-[320px] pr-2 custom-scrollbar">
+                           <p className="text-[8px] font-black uppercase tracking-[0.2em] text-muted mb-2 px-1">Root Pathways</p>
+                           {CATEGORIES.map(cat => (
+                             <button 
+                                key={cat.label} 
+                                type="button" 
+                                onClick={() => toggleCategory(cat.label)}
+                                className={`w-full flex items-center gap-3 p-3.5 rounded-2xl text-[10px] font-bold transition-all border group/node ${selectedCategories.includes(cat.label) ? 'bg-primary/20 border-primary/40 text-primary' : (activeTab === cat.label ? 'bg-white/5 border-white/20 text-foreground' : 'bg-transparent border-transparent text-muted hover:bg-white/5')}`}
+                             >
+                               <span className={selectedCategories.includes(cat.label) ? 'text-primary' : 'text-muted group-hover/node:text-foreground'}>{cat.icon}</span>
+                               {cat.label}
+                               {selectedCategories.includes(cat.label) && <div className="w-1 h-1 rounded-full bg-primary ml-auto shadow-[0_0_8px_#818cf8]"></div>}
+                             </button>
+                           ))}
+                        </div>
+
+                        {/* Subs Column */}
+                        <div className="bg-black/25 rounded-3xl p-4 border border-white/5 min-h-[320px]">
+                           {activeCategoryDef ? (
+                             <div className="space-y-2 animate-in fade-in slide-in-from-right-2 duration-300">
+                               <p className="text-[8px] font-black uppercase tracking-[0.2em] text-muted mb-4 px-1">{activeCategoryDef.label} Nodes</p>
+                               <div className="grid grid-cols-1 gap-1.5">
+                                 {activeCategoryDef.subs.map(sub => (
+                                   <button 
+                                      key={sub} 
+                                      type="button" 
+                                      onClick={() => toggleSub(sub)}
+                                      className={`w-full text-left p-3 rounded-xl text-[10px] font-bold transition-all flex items-center justify-between ${selectedSubs.includes(sub) ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-muted hover:bg-white/5 hover:text-foreground'}`}
+                                   >
+                                     {sub}
+                                     {selectedSubs.includes(sub) && <Check size={12} strokeWidth={4} />}
+                                   </button>
+                                 ))}
+                               </div>
+                             </div>
+                           ) : (
+                             <div className="flex flex-col items-center justify-center h-full opacity-20 text-center px-4">
+                               <Sliders size={32} className="mb-3" />
+                               <p className="text-[9px] font-black uppercase tracking-[0.2em]">Select root to expand neural branches</p>
                              </div>
                            )}
                         </div>
-                        <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-0.5 p-1">
-                          {filteredHistory.length === 0 ? (
-                            <div className="py-8 px-4 text-center text-muted">
-                               <Sparkles size={24} className="mx-auto mb-2 opacity-20" />
-                               <p className="text-[10px] font-medium leading-relaxed">{historySearch || historyFilterTag ? "No matches in cosmic archive." : "No entries recorded yet."}</p>
-                            </div>
-                          ) : (
-                            filteredHistory.map((p, i) => (
-                              <button key={i} type="button" onClick={() => { setPrompt(p); setShowPromptHistory(false); }} className="w-full text-left px-3 py-2.5 rounded-lg text-xs text-muted hover:bg-primary/10 hover:text-foreground transition-all group relative overflow-hidden">
-                                <div className="line-clamp-2 pr-6">{p}</div>
-                                <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"><Plus size={12} className="text-primary" /></div>
-                              </button>
-                            ))
-                          )}
-                        </div>
-                        {filteredHistory.length > 0 && <div className="p-2 border-t border-border bg-background/10 text-center"><p className="text-[9px] font-bold text-muted uppercase tracking-widest">{filteredHistory.length} results</p></div>}
                      </div>
-                   )}
-                </div>
-                {selectedImage && (
-                    <div className="absolute bottom-full mb-3 left-0 p-1.5 bg-surface/90 backdrop-blur border border-border rounded-xl shadow-2xl animate-in slide-in-from-bottom-2 z-50">
-                        <div className="relative">
-                            <img src={selectedImage} alt="Preview" className="h-20 w-auto rounded-lg object-cover border border-border" />
-                            <button type="button" onClick={clearImage} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-lg hover:bg-red-600 border border-white/20 transition-transform hover:scale-110"><X size={12} /></button>
-                        </div>
-                    </div>
-                )}
-                <input
-                  type="text"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder={getPlaceholder()}
-                  className="w-full h-full bg-background border border-border rounded-xl pl-10 pr-4 py-3 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  disabled={isGenerating}
-                />
+
+                     <div className="mt-6 pt-5 border-t border-white/5 flex gap-3">
+                        <button 
+                          type="button"
+                          onClick={() => { setSelectedCategories([]); setSelectedSubs([]); setCustomSeed(''); }}
+                          className="px-6 py-4 bg-white/5 hover:bg-white/10 rounded-2xl text-[9px] font-black uppercase tracking-widest text-muted transition-all"
+                        >
+                           Reset
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={handleRandom}
+                          className="flex-1 py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] transition-all hover:scale-[1.02] shadow-lg shadow-primary/20 flex items-center justify-center gap-2 group/roll"
+                        >
+                           <Dice5 size={14} className="group-hover/roll:rotate-45 transition-transform" /> Roll Integrated Mashup
+                        </button>
+                     </div>
+                   </div>
+                 )}
+               </div>
             </div>
-            
-            <button
-              type="submit"
-              disabled={isGenerating || (!prompt.trim() && !selectedImage)}
-              className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-primary/20 whitespace-nowrap overflow-hidden ${isGenerating ? 'bg-gradient-to-r from-primary/80 to-secondary/80 cursor-wait text-white ring-2 ring-white/20' : 'bg-gradient-to-r from-primary to-secondary hover:brightness-110 text-white active:scale-95'}`}
+
+            {/* Prompt Input Area */}
+            <div className="flex-1 relative group/input">
+              <input 
+                type="text" 
+                value={prompt} 
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="Describe a cinematic journey..."
+                className="w-full h-[68px] bg-black/40 border border-white/5 rounded-[2.2rem] px-8 text-[14px] font-bold tracking-tight focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all shadow-inner placeholder:text-muted/30 placeholder:font-black placeholder:uppercase placeholder:text-[10px] placeholder:tracking-[0.3em]"
+              />
+            </div>
+
+            {/* Execution Button */}
+            <button 
+              type="submit" 
+              disabled={isGenerating || (!prompt.trim())} 
+              className={`h-[68px] px-12 rounded-[2.2rem] font-black text-[12px] uppercase tracking-[0.4em] transition-all flex items-center gap-4 shadow-2xl active:scale-95 disabled:opacity-30 ${type === WallpaperType.video ? 'bg-gradient-to-r from-secondary to-purple-600 text-white shadow-secondary/30' : 'bg-primary text-white hover:scale-[1.03] shadow-primary/30'}`}
             >
-              {isGenerating ? (
-                <>
-                  <Wand2 size={20} className="animate-figure8 text-yellow-200" />
-                  <div className="flex flex-col items-start leading-none gap-0.5 min-w-[100px]">
-                    <span>{type === WallpaperType.video ? 'Rendering...' : 'Dreaming...'}</span>
-                    {secondsRemaining !== null && (
-                      <div className="flex items-center gap-1 text-[10px] font-normal opacity-90 text-white">
-                        <Clock size={10} />
-                        <span>{secondsRemaining > 0 ? `ETA: ${secondsRemaining}s` : 'Finalizing...'}</span>
-                      </div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <Wand2 size={20} />
-                  <span>Generate</span>
-                </>
-              )}
+              {isGenerating ? <Aperture className="animate-spin" size={20} /> : <Sparkles size={20} />}
+              <span>{isGenerating ? 'Processing' : 'Create'}</span>
             </button>
           </div>
 
-          <div className="flex items-center justify-between text-sm flex-wrap gap-4 pt-1">
-            <div className="flex items-center gap-6">
-               <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-bold text-muted uppercase tracking-widest px-1">Output Type</span>
-                  <div className="flex bg-background rounded-lg p-1 border border-border">
-                    <button type="button" onClick={() => setType(WallpaperType.image)} className={`px-4 py-1.5 rounded-md flex items-center gap-2 transition-all text-xs font-medium ${type === WallpaperType.image ? 'bg-surface text-foreground shadow-sm ring-1 ring-border' : 'text-muted hover:text-foreground'}`}>
-                      <ImageIcon size={14} /> <span>Still</span>
-                    </button>
-                    <button type="button" onClick={() => { setType(WallpaperType.video); if (!hasProKey) onRequestProKey(); }} className={`px-4 py-1.5 rounded-md flex items-center gap-2 transition-all text-xs font-medium ${type === WallpaperType.video ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-sm' : 'text-muted hover:text-foreground'}`}>
-                      {!hasProKey && <Lock size={12} className="text-pink-500/80" />} <Film size={14} /> <span>Animate</span>
-                    </button>
-                  </div>
-               </div>
-
-               {type === WallpaperType.image && (
-                 <div className="flex flex-col gap-1.5">
-                   <span className="text-[10px] font-bold text-muted uppercase tracking-widest px-1">Generation Model</span>
-                   <div className="flex bg-background rounded-lg p-1 border border-border">
-                     <button type="button" onClick={() => setModel(ModelType.Standard)} className={`px-4 py-1.5 rounded-md flex items-center gap-2 transition-all text-xs font-medium ${model === ModelType.Standard ? 'bg-surface text-foreground shadow-sm ring-1 ring-border' : 'text-muted hover:text-foreground'}`}>
-                       <Zap size={14} className={model === ModelType.Standard ? 'text-blue-400' : ''} /> <span>Flash</span>
-                     </button>
-                     <button type="button" onClick={() => handleModelChange(ModelType.Pro)} className={`px-4 py-1.5 rounded-md flex items-center gap-2 transition-all text-xs font-medium relative group ${model === ModelType.Pro ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg glow-primary' : 'text-muted hover:text-foreground'}`}>
-                       {!hasProKey ? <Lock size={12} className="text-yellow-500/80" /> : <Sparkles size={14} className="text-yellow-300" />} <span>Pro</span>
-                       {model === ModelType.Pro && hasProKey && <ShieldCheck size={10} className="absolute -top-1 -right-1 text-green-400 fill-current" />}
-                     </button>
+          {/* Secondary Control Row */}
+          <div className="flex items-center justify-between px-6 pt-1">
+             <div className="flex items-center gap-8">
+                
+                {/* Modality Segment (Moved here) */}
+                <div className="flex items-center gap-4">
+                   <span className="text-[9px] font-black text-muted uppercase tracking-[0.3em]">Modality</span>
+                   <div className="flex bg-black/30 rounded-xl p-1 border border-white/5 shadow-inner">
+                      <button 
+                        type="button" 
+                        onClick={() => setType(WallpaperType.image)} 
+                        className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-2 ${type === WallpaperType.image ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-muted hover:text-foreground'}`}
+                      >
+                        <ImageIcon size={14} /> Still
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => setType(WallpaperType.video)} 
+                        className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-2 ${type === WallpaperType.video ? 'bg-secondary text-white shadow-lg shadow-secondary/20' : 'text-muted hover:text-foreground'}`}
+                      >
+                        <Film size={14} /> Motion
+                      </button>
                    </div>
-                 </div>
-               )}
+                </div>
 
-               <div className="flex flex-col gap-1.5">
-                 <span className="text-[10px] font-bold text-muted uppercase tracking-widest px-1">Aspect Ratio</span>
-                 <div className="relative group pointer-events-auto">
-                    <button type="button" className="flex items-center gap-2 h-[38px] px-3 bg-background border border-border rounded-lg text-muted hover:text-foreground min-w-[120px]">
-                        <LayoutTemplate size={14} /> <span className="flex-1 text-left text-xs font-medium">{aspectRatio}</span> <ChevronDown size={14} className="opacity-50" />
-                    </button>
-                    <div className="absolute bottom-full mb-2 left-0 bg-surface border border-border rounded-lg shadow-2xl overflow-hidden hidden group-hover:block w-32 z-[100] animate-in fade-in zoom-in-95">
-                        {Object.values(AspectRatio).map((ratio) => {
-                          const disabled = type === WallpaperType.video && ratio !== AspectRatio.Landscape && ratio !== AspectRatio.Portrait;
-                          return (
-                            <button key={ratio} type="button" disabled={disabled} onClick={() => setAspectRatio(ratio)} className={`w-full text-left px-4 py-2.5 text-xs transition-colors ${disabled ? 'opacity-30 cursor-not-allowed bg-background' : 'hover:bg-primary/10'} ${aspectRatio === ratio ? 'text-primary font-bold bg-primary/5' : 'text-foreground'}`}>{ratio}</button>
-                          );
-                        })}
-                    </div>
-                 </div>
-               </div>
-            </div>
+                <div className="w-[1px] h-5 bg-white/5"></div>
 
-            <div className="flex flex-col items-end gap-1.5 ml-auto">
-                {model === ModelType.Pro && type === WallpaperType.image ? (
-                  <>
-                    <span className="text-[10px] font-bold text-muted uppercase tracking-widest px-1">Image Resolution</span>
-                    <div className="flex bg-background rounded-lg p-1 border border-primary/30 shadow-sm">
-                       {["1K", "2K", "4K"].map((size: any) => (
-                          <button key={size} type="button" onClick={() => setImageSize(size)} className={`px-4 py-1 rounded text-xs font-bold transition-all ${imageSize === size ? 'bg-primary text-white shadow-inner' : 'text-muted hover:text-foreground'}`}>{size}</button>
-                       ))}
-                    </div>
-                  </>
-                ) : (
-                   <div className="flex flex-col items-end opacity-60">
-                      <p className="text-[9px] uppercase tracking-tighter font-bold text-muted">Current Engine</p>
-                      <p className="text-[10px] font-medium text-foreground italic">{type === WallpaperType.video ? 'VEO Fast Engine' : '2.5 Flash Rendering'}</p>
+                {/* Viewport Config */}
+                <div className="flex items-center gap-4">
+                   <span className="text-[9px] font-black text-muted uppercase tracking-[0.3em]">Viewport</span>
+                   <div className="flex bg-black/30 rounded-xl p-1 border border-white/5">
+                      {[AspectRatio.Landscape, AspectRatio.Portrait, AspectRatio.Square].map(ratio => (
+                        <button 
+                          key={ratio} 
+                          type="button" 
+                          onClick={() => setAspectRatio(ratio)} 
+                          className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${aspectRatio === ratio ? 'bg-white/10 text-white border border-white/10' : 'text-muted hover:text-foreground'}`}
+                        >
+                          {ratio}
+                        </button>
+                      ))}
+                   </div>
+                </div>
+
+                <div className="w-[1px] h-5 bg-white/5"></div>
+
+                {/* Model Path Config */}
+                {type === WallpaperType.image && (
+                   <div className="flex items-center gap-8 animate-in fade-in slide-in-from-left-4 duration-500">
+                      <div className="flex items-center gap-4">
+                         <span className="text-[9px] font-black text-muted uppercase tracking-[0.3em]">Neural Core</span>
+                         <div className="flex bg-black/30 rounded-xl p-1 border border-white/5">
+                            <button 
+                              type="button" 
+                              onClick={() => setModel(ModelType.Standard)} 
+                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-2 ${model === ModelType.Standard ? 'bg-primary/20 border border-primary/40 text-primary' : 'text-muted hover:text-foreground'}`}
+                            >
+                              <Zap size={10} /> Flash
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => isPaidActive ? setModel(ModelType.Pro) : onRequestProKey()} 
+                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-2 ${model === ModelType.Pro ? 'bg-secondary/20 border border-secondary/40 text-secondary' : 'text-muted hover:text-foreground'}`}
+                            >
+                              <Star size={10} /> Pro {!isPaidActive && <Lock size={10} />}
+                            </button>
+                         </div>
+                      </div>
+
+                      {model === ModelType.Pro && (
+                         <div className="flex items-center gap-4 animate-in zoom-in-95 duration-300">
+                            <span className="text-[9px] font-black text-muted uppercase tracking-[0.3em]">Density</span>
+                            <div className="flex bg-black/30 rounded-xl p-1 border border-white/5">
+                               <button type="button" onClick={() => setImageSize(ImageSize.x1K)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${imageSize === ImageSize.x1K ? 'bg-white/10 text-white' : 'text-muted hover:text-foreground'}`}>1K</button>
+                               <button type="button" onClick={() => setImageSize(ImageSize.x4K)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${imageSize === ImageSize.x4K ? 'bg-yellow-500/20 text-yellow-500 border border-yellow-500/20' : 'text-muted hover:text-foreground'}`}>4K</button>
+                            </div>
+                         </div>
+                      )}
                    </div>
                 )}
-            </div>
+             </div>
+
+             <div className="flex items-center gap-6">
+                {!isPaidActive && (model === ModelType.Pro || type === WallpaperType.video) && (
+                   <button 
+                    type="button" 
+                    onClick={onRequestProKey} 
+                    className="flex items-center gap-2 px-4 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-[8px] font-black uppercase text-yellow-500 hover:bg-yellow-500/20 transition-all animate-pulse"
+                  >
+                      <Key size={12} /> Neural Pathway Restricted
+                   </button>
+                )}
+             </div>
           </div>
         </form>
       </div>
